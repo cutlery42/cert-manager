@@ -220,8 +220,27 @@ func (c *DNSProvider) CleanUp(domain, fqdn, value string) error {
 	}
 
 	for _, rec := range records {
+		var keep []string
+		for _, rr := range rec.Rrdatas {
+			if mustUnquote(rr) != mustUnquote(value) {
+				keep = append(keep, rr)
+			}
+		}
+
 		change := &dns.Change{
 			Deletions: []*dns.ResourceRecordSet{rec},
+		}
+		if len(keep) > 0 {
+			change.Additions = []*dns.ResourceRecordSet{{
+				Kind:             rec.Kind,
+				Name:             rec.Name,
+				Rrdatas:          keep,
+				SignatureRrdatas: rec.SignatureRrdatas,
+				Ttl:              rec.Ttl,
+				Type:             rec.Type,
+				ForceSendFields:  rec.ForceSendFields,
+				NullFields:       rec.NullFields,
+			}}
 		}
 		_, err = c.client.Changes.Create(c.project, zone, change).Do()
 		if err != nil {
