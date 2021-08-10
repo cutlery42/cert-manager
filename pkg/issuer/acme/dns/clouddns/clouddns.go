@@ -14,8 +14,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	logf "github.com/cert-manager/cert-manager/pkg/logs"
 
 	"github.com/go-logr/logr"
@@ -26,6 +28,9 @@ import (
 
 	"github.com/cert-manager/cert-manager/pkg/issuer/acme/dns/util"
 )
+
+// Keep this many rrdata entries on the challenge record (2 should usually be enough to allow for the wildard/non-wildcard combo)
+const ChallengeRecordSize = 5
 
 // DNSProvider is an implementation of the DNSProvider interface.
 type DNSProvider struct {
@@ -159,32 +164,47 @@ func (c *DNSProvider) Present(domain, fqdn, value string) error {
 		Additions: []*dns.ResourceRecordSet{rec},
 	}
 
-	// Look for existing records.
-	list, err := c.client.ResourceRecordSets.List(c.project, zone).Name(fqdn).Type("TXT").Do()
-	if err != nil {
-		return err
-	}
-	if len(list.Rrsets) > 0 {
-		// Attempt to delete the existing records when adding our new one.
-		change.Deletions = list.Rrsets
-	}
-
-	chg, err := c.client.Changes.Create(c.project, zone, change).Do()
-	if err != nil {
-		return err
-	}
-
-	// wait for change to be acknowledged
-	for chg.Status == "pending" {
-		time.Sleep(time.Second)
-
-		chg, err = c.client.Changes.Get(c.project, zone, chg.Id).Do()
+	return backoff.Retry(func() error {
+		// Look for existing records.
+		list, err := c.client.ResourceRecordSets.List(c.project, zone).Name(fqdn).Type("TXT").Do()
 		if err != nil {
 			return err
 		}
-	}
+		if len(list.Rrsets) > 0 {
+			// Attempt to delete the existing records when adding our new one.
+			// change.Deletions = list.Rrsets
+			prev := list.Rrsets[0]
+			l := len(prev.Rrdatas) - ChallengeRecordSize
+			if l < 0 {
+				l = 0
+			}
+			rec.Rrdatas = append([]string{}, prev.Rrdatas[l:]...)
+			for i := range rec.Rrdatas {
+				rec.Rrdatas[i] = mustUnquote(rec.Rrdatas[i])
+			}
+			rec.Rrdatas = dedup(append(rec.Rrdatas, value))
+			change = &dns.Change{
+				Deletions: list.Rrsets,
+				Additions: []*dns.ResourceRecordSet{rec},
+			}
+		}
 
-	return nil
+		chg, err := c.client.Changes.Create(c.project, zone, change).Do()
+		if err != nil {
+			return err
+		}
+
+		// wait for change to be acknowledged
+		for chg.Status == "pending" {
+			time.Sleep(time.Second)
+
+			chg, err = c.client.Changes.Get(c.project, zone, chg.Id).Do()
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}, backoff.WithMaxRetries(backoff.NewExponentialBackOff(), 5))
 }
 
 // CleanUp removes the TXT record matching the specified parameters.
@@ -260,4 +280,25 @@ func (c *DNSProvider) findTxtRecords(zone, fqdn string) ([]*dns.ResourceRecordSe
 	}
 
 	return found, nil
+}
+
+func dedup(ss []string) []string {
+	p := map[string]struct{}{}
+	i := 0
+	for _, s := range ss {
+		if _, exists := p[s]; !exists {
+			p[s] = struct{}{}
+			ss[i] = s
+			i++
+		}
+	}
+	return ss[:i]
+}
+
+func mustUnquote(raw string) string {
+	clean, err := strconv.Unquote(raw)
+	if err != nil {
+		return raw
+	}
+	return clean
 }
