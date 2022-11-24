@@ -286,7 +286,7 @@ func (c *DNSProvider) getHostedZone(domain string) (string, error) {
 }
 
 func (c *DNSProvider) findTxtRecords(zone, fqdn string) ([]*dns.ResourceRecordSet, error) {
-	recs, err := c.client.ResourceRecordSets.List(c.project, zone).Do()
+	recs, err := c.client.ResourceRecordSets.List(c.project, zone).Type("TXT").Name(fqdn).Do()
 	if err != nil {
 		return nil, err
 	}
