@@ -10,6 +10,7 @@ require (
 	github.com/Venafi/vcert/v4 v4.22.1
 	github.com/akamai/AkamaiOPEN-edgegrid-golang v1.2.1
 	github.com/aws/aws-sdk-go v1.44.105
+	github.com/cenkalti/backoff v2.2.1+incompatible
 	github.com/cloudflare/cloudflare-go v0.50.0
 	github.com/cpu/goacmedns v0.1.1
 	github.com/digitalocean/godo v1.86.0
