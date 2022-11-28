@@ -200,6 +200,16 @@ func compareChallenges(l, r *cmacme.Challenge) int {
 		return 1
 	}
 
+	// Allow multiple keys on the same fqdn
+	if l.Spec.Type == cmacme.ACMEChallengeTypeDNS01 && l.Spec.Solver.DNS01 != nil && l.Spec.Solver.DNS01.CloudDNS != nil && r.Spec.Solver.DNS01 != nil && r.Spec.Solver.DNS01.CloudDNS != nil {
+		if l.Spec.Key < r.Spec.Key {
+			return -1
+		}
+		if l.Spec.Key > r.Spec.Key {
+			return 1
+		}
+	}
+
 	// TODO: check the http01.ingressClass attribute and allow two challenges
 	// with different ingress classes specified to be scheduled at once
 
