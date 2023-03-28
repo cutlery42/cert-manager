@@ -36,7 +36,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/flowcontrol"
 	"k8s.io/utils/clock"
-	gwapi "sigs.k8s.io/gateway-api/apis/v1alpha2"
+	gwapi "sigs.k8s.io/gateway-api/apis/v1beta1"
 	gwclient "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned"
 	gwscheme "sigs.k8s.io/gateway-api/pkg/client/clientset/versioned/scheme"
 	gwinformers "sigs.k8s.io/gateway-api/pkg/client/informers/externalversions"
@@ -169,6 +169,9 @@ type ACMEOptions struct {
 
 	// HTTP01SolverResourceLimitsMemory defines the ACME pod's resource limits Memory size
 	HTTP01SolverResourceLimitsMemory resource.Quantity
+
+	// ACMEHTTP01SolverRunAsNonRoot sets the ACME pod's ability to run as root
+	ACMEHTTP01SolverRunAsNonRoot bool
 
 	// HTTP01SolverNameservers is a list of nameservers to use when performing self-checks
 	// for ACME HTTP01 validations.

@@ -94,6 +94,64 @@ func SecretPrivateKeyMatchesSpec(input Input) (string, string, bool) {
 	return "", "", false
 }
 
+// SecretKeystoreFormatMatchesSpec - When the keystore is not defined, the keystore
+// related fields are removed from the secret.
+// When one or more key stores are defined,  the
+// corresponding secrets are generated.
+// If the private key rotation is set to "Never", the key store related values are re-encoded
+// as per the certificate specification
+func SecretKeystoreFormatMatchesSpec(input Input) (string, string, bool) {
+	if input.Certificate.Spec.Keystores == nil {
+		if len(input.Secret.Data[cmapi.PKCS12SecretKey]) != 0 ||
+			len(input.Secret.Data[cmapi.PKCS12TruststoreKey]) != 0 ||
+			len(input.Secret.Data[cmapi.JKSSecretKey]) != 0 ||
+			len(input.Secret.Data[cmapi.JKSTruststoreKey]) != 0 {
+			return SecretMismatch, "Keystore is not defined", true
+		}
+		return "", "", false
+	}
+
+	if input.Certificate.Spec.Keystores.JKS != nil {
+		if input.Certificate.Spec.Keystores.JKS.Create {
+			if len(input.Secret.Data[cmapi.JKSSecretKey]) == 0 ||
+				len(input.Secret.Data[cmapi.JKSTruststoreKey]) == 0 {
+				return SecretMismatch, "JKS Keystore keys does not contain data", true
+			}
+		} else {
+			if len(input.Secret.Data[cmapi.JKSSecretKey]) != 0 ||
+				len(input.Secret.Data[cmapi.JKSTruststoreKey]) != 0 {
+				return SecretMismatch, "JKS Keystore create disabled", true
+			}
+		}
+	} else {
+		if len(input.Secret.Data[cmapi.JKSSecretKey]) != 0 ||
+			len(input.Secret.Data[cmapi.JKSTruststoreKey]) != 0 {
+			return SecretMismatch, "JKS Keystore not defined", true
+		}
+	}
+
+	if input.Certificate.Spec.Keystores.PKCS12 != nil {
+		if input.Certificate.Spec.Keystores.PKCS12.Create {
+			if len(input.Secret.Data[cmapi.PKCS12SecretKey]) == 0 ||
+				len(input.Secret.Data[cmapi.PKCS12TruststoreKey]) == 0 {
+				return SecretMismatch, "PKCS12 Keystore keys does not contain data", true
+			}
+		} else {
+			if len(input.Secret.Data[cmapi.PKCS12SecretKey]) != 0 ||
+				len(input.Secret.Data[cmapi.PKCS12TruststoreKey]) != 0 {
+				return SecretMismatch, "PKCS12 Keystore create disabled", true
+			}
+		}
+	} else {
+		if len(input.Secret.Data[cmapi.PKCS12SecretKey]) != 0 ||
+			len(input.Secret.Data[cmapi.PKCS12TruststoreKey]) != 0 {
+			return SecretMismatch, "PKCS12 Keystore not defined", true
+		}
+	}
+
+	return "", "", false
+}
+
 func SecretIssuerAnnotationsNotUpToDate(input Input) (string, string, bool) {
 	name := input.Secret.Annotations[cmapi.IssuerNameAnnotationKey]
 	kind := input.Secret.Annotations[cmapi.IssuerKindAnnotationKey]
@@ -330,6 +388,10 @@ func SecretTemplateMismatchesSecretManagedFields(fieldManager string) Func {
 			managedAnnotations = managedAnnotations.Delete(k)
 		}
 
+		// Remove the base label from the managed Labels so we can
+		// compare 1 to 1 against the SecretTemplate
+		managedLabels.Delete(cmapi.PartOfCertManagerControllerLabelKey)
+
 		// Check early for Secret Template being nil, and whether managed
 		// labels/annotations are not.
 		if input.Certificate.Spec.SecretTemplate == nil {
@@ -369,6 +431,29 @@ func SecretTemplateMismatchesSecretManagedFields(fieldManager string) Func {
 
 		return "", "", false
 	}
+}
+
+func SecretBaseLabelsAreMissing(input Input) (string, string, bool) {
+	// If certificate has not been issued yet or is in invalid state, do not attempt to update metadata
+	if len(input.Secret.Data[corev1.TLSCertKey]) > 0 {
+		var err error
+		_, err = pki.DecodeX509CertificateBytes(input.Secret.Data[corev1.TLSCertKey])
+		if err != nil {
+			// This case should never happen as it should always be caught by the
+			// secretPublicKeysMatch function beforehand, but handle it just in case.
+			return InvalidCertificate, fmt.Sprintf("Failed to decode stored certificate: %v", err), true
+		}
+	}
+
+	// check if Secret has the base labels. Currently there is only one base label
+	if input.Secret.Labels == nil {
+		return SecretBaseLabelsMissing, fmt.Sprintf("missing base label %s", cmapi.PartOfCertManagerControllerLabelKey), true
+	}
+	if _, ok := input.Secret.Labels[cmapi.PartOfCertManagerControllerLabelKey]; !ok {
+		return SecretBaseLabelsMissing, fmt.Sprintf("missing base label %s", cmapi.PartOfCertManagerControllerLabelKey), true
+	}
+
+	return "", "", false
 }
 
 // SecretAdditionalOutputFormatsDataMismatch validates that the Secret has the

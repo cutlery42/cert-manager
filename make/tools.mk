@@ -14,12 +14,12 @@ TOOLS :=
 TOOLS += helm=v3.10.0
 TOOLS += kubectl=v1.25.2
 TOOLS += kind=v0.16.0
-TOOLS += controller-gen=v0.10.0
+TOOLS += controller-gen=v0.11.1
 TOOLS += cosign=v1.12.1
 TOOLS += cmrel=a1e2bad95be9688794fd0571c4c40e88cccf9173
 TOOLS += release-notes=v0.14.0
 TOOLS += goimports=v0.1.12
-TOOLS += go-licenses=v1.3.1
+TOOLS += go-licenses=v1.5.0
 TOOLS += gotestsum=v1.8.2
 TOOLS += rclone=v1.59.2
 TOOLS += trivy=v0.32.0
@@ -27,16 +27,18 @@ TOOLS += ytt=v0.43.0
 TOOLS += yq=v4.27.5
 TOOLS += crane=v0.11.0
 TOOLS += ginkgo=$(shell awk '/ginkgo\/v2/ {print $$2}' go.mod)
+TOOLS += ko=v0.12.0
 
-GATEWAY_API_VERSION=v0.5.0
+# Version of Gateway API install bundle https://gateway-api.sigs.k8s.io/v1alpha2/guides/#installing-gateway-api
+GATEWAY_API_VERSION=v0.5.1
 
-K8S_CODEGEN_VERSION=v0.25.2
+K8S_CODEGEN_VERSION=v0.26.0
 
 KUBEBUILDER_ASSETS_VERSION=1.25.0
 TOOLS += etcd=$(KUBEBUILDER_ASSETS_VERSION)
 TOOLS += kube-apiserver=$(KUBEBUILDER_ASSETS_VERSION)
 
-VENDORED_GO_VERSION := 1.19.3
+VENDORED_GO_VERSION := 1.19.5
 
 # When switching branches which use different versions of the tools, we
 # need a way to re-trigger the symlinking from $(BINDIR)/downloaded to $(BINDIR)/tools.
@@ -328,6 +330,25 @@ $(BINDIR)/downloaded/tools/yq@$(YQ_VERSION)_%: | $(BINDIR)/downloaded/tools
 	./hack/util/checkhash.sh $@ $(YQ_$*_SHA256SUM)
 	chmod +x $@
 
+######
+# ko #
+######
+
+KO_linux_amd64_SHA256SUM=05aa77182fa7c55386bd2a210fd41298542726f33bbfc9c549add3a66f7b90ad
+KO_darwin_amd64_SHA256SUM=8679d0d74fc75f24e044649c6a961dad0a3ef03bedbdece35e2f3f29eb7876af
+KO_darwin_arm64_SHA256SUM=cfef98db8ad0e1edaa483fa5c6af89eb573a8434abd372b510b89005575de702
+
+$(BINDIR)/downloaded/tools/ko@$(KO_VERSION)_%: | $(BINDIR)/downloaded/tools
+	$(eval OS_AND_ARCH := $(subst darwin,Darwin,$*))
+	$(eval OS_AND_ARCH := $(subst linux,Linux,$(OS_AND_ARCH)))
+	$(eval OS_AND_ARCH := $(subst amd64,x86_64,$(OS_AND_ARCH)))
+
+	$(CURL) https://github.com/ko-build/ko/releases/download/$(KO_VERSION)/ko_$(patsubst v%,%,$(KO_VERSION))_$(OS_AND_ARCH).tar.gz -o $@.tar.gz
+	./hack/util/checkhash.sh $@.tar.gz $(KO_$*_SHA256SUM)
+	tar xfO $@.tar.gz ko > $@
+	chmod +x $@
+	rm $@.tar.gz
+
 #####################
 # k8s codegen tools #
 #####################
@@ -355,7 +376,7 @@ $(K8S_CODEGEN_TOOLS_DOWNLOADS): $(BINDIR)/downloaded/tools/%-gen@$(K8S_CODEGEN_V
 
 KUBEBUILDER_TOOLS_linux_amd64_SHA256SUM=c9796a0a13ccb79b77e3d64b8d3bb85a14fc850800724c63b85bf5bacbe0b4ba
 KUBEBUILDER_TOOLS_darwin_amd64_SHA256SUM=a232faf4551ffb1185660c5a2eb9eaaf7eb02136fa71e7ead84ee940a205d9bf
-KUBEBUILDER_TOOLS_darwin_arm64_SHA256SUM=9a8c8526965f46256ff947303342e73499217df5c53680a03ac950d331191ffc
+KUBEBUILDER_TOOLS_darwin_arm64_SHA256SUM=e5ae7aaead02af274f840693131f24aa0506b0b44ccecb5f073847b39bef2ce2
 
 $(BINDIR)/downloaded/tools/etcd@$(KUBEBUILDER_ASSETS_VERSION)_%: $(BINDIR)/downloaded/tools/kubebuilder_tools_$(KUBEBUILDER_ASSETS_VERSION)_%.tar.gz | $(BINDIR)/downloaded/tools
 	./hack/util/checkhash.sh $< $(KUBEBUILDER_TOOLS_$*_SHA256SUM)
@@ -374,15 +395,11 @@ $(BINDIR)/downloaded/tools/kubebuilder_tools_$(KUBEBUILDER_ASSETS_VERSION)_$(HOS
 # gatewayapi #
 ##############
 
-GATEWAY_API_SHA256SUM=c45f8806883014f7f75a2084c612fc62eb00d5c1915a906f8ca5ecda5450b163
+GATEWAY_API_SHA256SUM=b84972572a104012e7fbea5651a113ac872f6ffeb0b037b4505d664383c932a3
 
-$(BINDIR)/downloaded/gateway-api@$(GATEWAY_API_VERSION): $(BINDIR)/downloaded/gateway-api@$(GATEWAY_API_VERSION).tar.gz | $(BINDIR)/downloaded
-	./hack/util/checkhash.sh $< $(GATEWAY_API_SHA256SUM)
-	@mkdir -p $@
-	tar xz -C $@ -f $<
-
-$(BINDIR)/downloaded/gateway-api@$(GATEWAY_API_VERSION).tar.gz: | $(BINDIR)/downloaded
-	$(CURL) https://github.com/kubernetes-sigs/gateway-api/archive/refs/tags/$(GATEWAY_API_VERSION).tar.gz -o $@
+$(BINDIR)/downloaded/gateway-api-$(GATEWAY_API_VERSION).yaml: | $(BINDIR)/downloaded
+	$(CURL) https://github.com/kubernetes-sigs/gateway-api/releases/download/$(GATEWAY_API_VERSION)/experimental-install.yaml -o $@
+	./hack/util/checkhash.sh $(BINDIR)/downloaded/gateway-api-$(GATEWAY_API_VERSION).yaml $(GATEWAY_API_SHA256SUM)
 
 #################
 # Other Targets #
@@ -417,3 +434,7 @@ tools: $(TOOLS_PATHS) $(K8S_CODEGEN_TOOLS_PATHS) ## install all tools
 .PHONY: update-kind-images
 update-kind-images: $(BINDIR)/tools/crane
 	CRANE=./$(BINDIR)/tools/crane ./hack/latest-kind-images.sh
+
+.PHONY: update-base-images
+update-base-images: $(BINDIR)/tools/crane
+	CRANE=./$(BINDIR)/tools/crane ./hack/latest-base-images.sh

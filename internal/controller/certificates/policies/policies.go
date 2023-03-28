@@ -100,6 +100,8 @@ func NewSecretPostIssuancePolicyChain(ownerRefEnabled bool, fieldManager string)
 		SecretAdditionalOutputFormatsOwnerMismatch(fieldManager),
 		SecretOwnerReferenceManagedFieldMismatch(ownerRefEnabled, fieldManager),
 		SecretOwnerReferenceValueMismatch(ownerRefEnabled),
+		SecretKeystoreFormatMatchesSpec,
+		SecretBaseLabelsAreMissing,
 	}
 }
 

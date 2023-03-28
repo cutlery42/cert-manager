@@ -10,25 +10,25 @@ CRI_ARCH := $(HOST_ARCH)
 
 # TODO: this version is also defaulted in ./make/cluster.sh. Make it so that it
 # is set in one place only.
-K8S_VERSION := 1.24
+K8S_VERSION := 1.26
 
 IMAGE_ingressnginx_amd64 := k8s.gcr.io/ingress-nginx/controller:v1.1.0@sha256:7464dc90abfaa084204176bcc0728f182b0611849395787143f6854dc6c38c85
 IMAGE_kyverno_amd64 := ghcr.io/kyverno/kyverno:v1.7.1@sha256:aec4b029660d47aea025336150fdc2822c991f592d5170d754b6acaf158b513e
 IMAGE_kyvernopre_amd64 := ghcr.io/kyverno/kyvernopre:v1.7.1@sha256:1bcec6bc854720e22f439c6dcea02fcf689f31976babcf03a449d750c2b1f34a
-IMAGE_vault_amd64 := index.docker.io/library/vault:1.2.3@sha256:b1c86c9e173f15bb4a926e4144a63f7779531c30554ac7aee9b2a408b22b2c01
+IMAGE_vault_amd64 := index.docker.io/library/vault:1.12.1@sha256:08dd1cb922624c51a5aefd4d9ce0ac5ed9688d96d8a5ad94664fa10e84702ed6
 IMAGE_bind_amd64 := docker.io/eafxx/bind:latest-9f74179f@sha256:0b8c766f5bedbcbe559c7970c8e923aa0c4ca771e62fcf8dba64ffab980c9a51
 IMAGE_sampleexternalissuer_amd64 := ghcr.io/cert-manager/sample-external-issuer/controller:v0.1.1@sha256:7dafe98c73d229bbac08067fccf9b2884c63c8e1412fe18f9986f59232cf3cb5
-IMAGE_projectcontour_amd64 := ghcr.io/projectcontour/contour:v1.22.0@sha256:c8ee1e566340c1bfd11fc9a1a90d758bde562faecb722540207084330b300497
+IMAGE_projectcontour_amd64 := ghcr.io/projectcontour/contour:v1.23.2@sha256:4b9ed5bfd4afd02eabc3b6235293489dbae1684d4d3dee37e982e87638a011f9
 IMAGE_pebble_amd64 := local/pebble:local
 IMAGE_vaultretagged_amd64 := local/vault:local
 
 IMAGE_ingressnginx_arm64 := k8s.gcr.io/ingress-nginx/controller:v1.1.0@sha256:86be28e506653cbe29214cb272d60e7c8841ddaf530da29aa22b1b1017faa956
 IMAGE_kyverno_arm64 := ghcr.io/kyverno/kyverno:v1.7.1@sha256:4355f1f65ea5e952886e929a15628f0c6704905035b4741c6f560378871c9335
 IMAGE_kyvernopre_arm64 := ghcr.io/kyverno/kyvernopre:v1.7.1@sha256:141234fb74242155c7b843180b90ee5fb6a20c9e77598bd9c138c687059cdafd
-IMAGE_vault_arm64 := index.docker.io/library/vault:1.2.3@sha256:226a269b83c4b28ff8a512e76f1e7b707eccea012e4c3ab4c7af7fff1777ca2d
+IMAGE_vault_arm64 := $(IMAGE_vault_amd64)
 IMAGE_bind_arm64 := docker.io/eafxx/bind:latest-9f74179f@sha256:85de273f24762c0445035d36290a440e8c5a6a64e9ae6227d92e8b0b0dc7dd6d
 IMAGE_sampleexternalissuer_arm64 := # 🚧 NOT AVAILABLE FOR arm64 🚧
-IMAGE_projectcontour_arm64 := ghcr.io/projectcontour/contour:v1.22.0@sha256:ca37e86e284e72b3a969c7845a56a1cfcd348f4cb75bf6312d5b11067efdd667
+IMAGE_projectcontour_arm64 := ghcr.io/projectcontour/contour:v1.23.2@sha256:c877e098c42d07244cc26d4d6d4743d80fe4313a69d8c775782cba93341e0099
 IMAGE_pebble_arm64 := local/pebble:local
 IMAGE_vaultretagged_arm64 := local/vault:local
 
@@ -37,7 +37,7 @@ IMAGE_kind_arm64 := $(IMAGE_kind_amd64)
 
 PEBBLE_COMMIT = ba5f81dd80fa870cbc19326f2d5a46f45f0b5ee3
 
-# TODO: move the installation commands in this file to separate scripts like those in https://github.com/cert-manager/cert-manager/tree/master/devel/addon for readability
+# TODO: considering moving the installation commands in this file to separate scripts for readability
 # Once that is done, we can consume this variable from ./make/config/lib.sh
 SERVICE_IP_PREFIX = 10.0.0
 
@@ -131,7 +131,7 @@ $(LOAD_TARGETS): load-%: % $(BINDIR)/scratch/kind-exists | $(NEEDS_KIND)
 # We don't pull using both the digest and tag because crane replaces the
 # tag with "i-was-a-digest". We still check that the downloaded image
 # matches the digest.
-$(call image-tar,kyverno) $(call image-tar,kyvernopre) $(call image-tar,bind) $(call image-tar,projectcontour) $(call image-tar,sampleexternalissuer) $(call image-tar,vault) $(call image-tar,ingressnginx): $(BINDIR)/downloaded/containers/$(CRI_ARCH)/%.tar: | $(NEEDS_CRANE)
+$(call image-tar,kyverno) $(call image-tar,kyvernopre) $(call image-tar,bind) $(call image-tar,projectcontour) $(call image-tar,sampleexternalissuer) $(call image-tar,ingressnginx): $(BINDIR)/downloaded/containers/$(CRI_ARCH)/%.tar: | $(NEEDS_CRANE)
 	@$(eval IMAGE=$(subst +,:,$*))
 	@$(eval IMAGE_WITHOUT_DIGEST=$(shell cut -d@ -f1 <<<"$(IMAGE)"))
 	@$(eval DIGEST=$(subst $(IMAGE_WITHOUT_DIGEST)@,,$(IMAGE)))
@@ -140,7 +140,7 @@ $(call image-tar,kyverno) $(call image-tar,kyvernopre) $(call image-tar,bind) $(
 	$(CRANE) pull $(IMAGE_WITHOUT_DIGEST) $@ --platform=linux/$(CRI_ARCH)
 
 # Same as above, except it supports multiarch images.
-$(call image-tar,kind): $(BINDIR)/downloaded/containers/$(CRI_ARCH)/%.tar: | $(NEEDS_CRANE)
+$(call image-tar,kind) $(call image-tar,vault): $(BINDIR)/downloaded/containers/$(CRI_ARCH)/%.tar: | $(NEEDS_CRANE)
 	@$(eval IMAGE=$(subst +,:,$*))
 	@$(eval IMAGE_WITHOUT_DIGEST=$(shell cut -d@ -f1 <<<"$(IMAGE)"))
 	@$(eval DIGEST=$(subst $(IMAGE_WITHOUT_DIGEST)@,,$(IMAGE)))
@@ -158,7 +158,7 @@ $(call image-tar,vaultretagged): $(call image-tar,vault)
 	tar cf $@ -C /tmp/vault .
 	@rm -rf /tmp/vault
 
-FEATURE_GATES ?= AdditionalCertificateOutputFormats=true,ExperimentalCertificateSigningRequestControllers=true,ExperimentalGatewayAPISupport=true,ServerSideApply=true,LiteralCertificateSubject=true
+FEATURE_GATES ?= AdditionalCertificateOutputFormats=true,ExperimentalCertificateSigningRequestControllers=true,ExperimentalGatewayAPISupport=true,ServerSideApply=true,LiteralCertificateSubject=true,UseCertificateRequestBasicConstraints=true
 
 # In make, there is no way to escape commas or spaces. So we use the
 # variables $(space) and $(comma) instead.
@@ -168,7 +168,7 @@ comma = ,
 
 # Helm's "--set" interprets commas, which means we want to escape commas
 # for "--set featureGates". That's why we have "\$(comma)".
-feature_gates_controller := $(subst $(space),\$(comma),$(filter AllAlpha=% AllBeta=% AdditionalCertificateOutputFormats=% ValidateCAA=% ExperimentalCertificateSigningRequestControllers=% ExperimentalGatewayAPISupport=% ServerSideApply=% LiteralCertificateSubject=%, $(subst $(comma),$(space),$(FEATURE_GATES))))
+feature_gates_controller := $(subst $(space),\$(comma),$(filter AllAlpha=% AllBeta=% AdditionalCertificateOutputFormats=% ValidateCAA=% ExperimentalCertificateSigningRequestControllers=% ExperimentalGatewayAPISupport=% ServerSideApply=% LiteralCertificateSubject=% UseCertificateRequestBasicConstraints=%, $(subst $(comma),$(space),$(FEATURE_GATES))))
 feature_gates_webhook := $(subst $(space),\$(comma),$(filter AllAlpha=% AllBeta=% AdditionalCertificateOutputFormats=% LiteralCertificateSubject=%,   $(subst $(comma),$(space),$(FEATURE_GATES))))
 feature_gates_cainjector := $(subst $(space),\$(comma),$(filter AllAlpha=% AllBeta=%, $(subst $(comma),$(space),$(FEATURE_GATES))))
 
@@ -188,16 +188,18 @@ e2e-setup-certmanager: $(BINDIR)/cert-manager.tgz $(foreach binaryname,controlle
 		--set image.repository="$(shell tar xfO $(BINDIR)/containers/cert-manager-controller-linux-$(CRI_ARCH).tar manifest.json | jq '.[0].RepoTags[0]' -r | cut -d: -f1)" \
 		--set cainjector.image.repository="$(shell tar xfO $(BINDIR)/containers/cert-manager-cainjector-linux-$(CRI_ARCH).tar manifest.json | jq '.[0].RepoTags[0]' -r | cut -d: -f1)" \
 		--set webhook.image.repository="$(shell tar xfO $(BINDIR)/containers/cert-manager-webhook-linux-$(CRI_ARCH).tar manifest.json | jq '.[0].RepoTags[0]' -r | cut -d: -f1)" \
+		--set acmesolver.image.repository="$(shell tar xfO $(BINDIR)/containers/cert-manager-acmesolver-linux-$(CRI_ARCH).tar manifest.json | jq '.[0].RepoTags[0]' -r | cut -d: -f1)" \
 		--set startupapicheck.image.repository="$(shell tar xfO $(BINDIR)/containers/cert-manager-ctl-linux-$(CRI_ARCH).tar manifest.json | jq '.[0].RepoTags[0]' -r | cut -d: -f1)" \
 		--set image.tag="$(TAG)" \
 		--set cainjector.image.tag="$(TAG)" \
 		--set webhook.image.tag="$(TAG)" \
+		--set acmesolver.image.tag="$(TAG)" \
 		--set startupapicheck.image.tag="$(TAG)" \
 		--set installCRDs=true \
 		--set featureGates="$(feature_gates_controller)" \
 		--set "webhook.extraArgs={--feature-gates=$(feature_gates_webhook)}" \
 		--set "cainjector.extraArgs={--feature-gates=$(feature_gates_cainjector)}" \
-		--set "extraArgs={--dns01-recursive-nameservers=$(SERVICE_IP_PREFIX).16:53,--dns01-recursive-nameservers-only=true,--acme-http01-solver-image=cert-manager-acmesolver-$(CRI_ARCH):$(TAG)}" \
+		--set "extraArgs={--dns01-recursive-nameservers=$(SERVICE_IP_PREFIX).16:53,--dns01-recursive-nameservers-only=true}" \
 		cert-manager $< >/dev/null
 
 .PHONY: e2e-setup-bind
@@ -207,8 +209,8 @@ e2e-setup-bind: $(call image-tar,bind) load-$(call image-tar,bind) $(wildcard ma
 	sed -e "s|{SERVICE_IP_PREFIX}|$(SERVICE_IP_PREFIX)|g" -e "s|{IMAGE}|$(IMAGE)|g" make/config/bind/*.yaml | $(KUBECTL) apply -n bind -f - >/dev/null
 
 .PHONY: e2e-setup-gatewayapi
-e2e-setup-gatewayapi: $(BINDIR)/downloaded/gateway-api@$(GATEWAY_API_VERSION) $(BINDIR)/scratch/kind-exists $(NEEDS_KUBECTL)
-	$(KUBECTL) kustomize $</*/config/crd/experimental | $(KUBECTL) apply -f - >/dev/null
+e2e-setup-gatewayapi: $(BINDIR)/downloaded/gateway-api-$(GATEWAY_API_VERSION).yaml $(BINDIR)/scratch/kind-exists $(NEEDS_KUBECTL)
+	$(KUBECTL) apply -f $(BINDIR)/downloaded/gateway-api-$(GATEWAY_API_VERSION).yaml > /dev/null
 
 
 # v1 NGINX-Ingress by default only watches Ingresses with Ingress class
@@ -312,10 +314,13 @@ e2e-setup-samplewebhook: load-$(BINDIR)/downloaded/containers/$(CRI_ARCH)/sample
 e2e-setup-projectcontour: $(call image-tar,projectcontour) load-$(call image-tar,projectcontour) make/config/projectcontour/gateway.yaml make/config/projectcontour/contour.yaml $(BINDIR)/scratch/kind-exists | $(NEEDS_HELM) $(NEEDS_KUBECTL)
 	@$(eval TAG=$(shell tar xfO $< manifest.json | jq '.[0].RepoTags[0]' -r | cut -d: -f2))
 	$(HELM) repo add bitnami --force-update https://charts.bitnami.com/bitnami >/dev/null
+	# Warning: When upgrading the version of this helm chart, bear in mind that the IMAGE_projectcontour_* images above might need to be updated, too.
+	# Each helm chart version in the bitnami repo corresponds to an underlying application version. Check application versions and chart versions with:
+	# $ helm search repo bitnami -l | grep -E "contour[^-]"
 	$(HELM) upgrade \
 		--install \
 		--wait \
-		--version 7.8.1 \
+		--version 10.1.3 \
 		--namespace projectcontour \
 		--create-namespace \
 		--set contour.ingressClass.create=false \
