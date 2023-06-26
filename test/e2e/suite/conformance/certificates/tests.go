@@ -37,17 +37,17 @@ import (
 	"k8s.io/client-go/util/retry"
 	"k8s.io/utils/pointer"
 
+	e2eutil "github.com/cert-manager/cert-manager/e2e-tests/util"
 	"github.com/cert-manager/cert-manager/internal/controller/feature"
 	cmapi "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	"github.com/cert-manager/cert-manager/pkg/util"
 	utilfeature "github.com/cert-manager/cert-manager/pkg/util/feature"
 	"github.com/cert-manager/cert-manager/pkg/util/pki"
-	"github.com/cert-manager/cert-manager/test/e2e/framework"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/helper/featureset"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/helper/validation"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/helper/validation/certificates"
-	e2eutil "github.com/cert-manager/cert-manager/test/e2e/util"
+	"github.com/cert-manager/cert-manager/test/framework"
+	"github.com/cert-manager/cert-manager/test/framework/helper/featureset"
+	"github.com/cert-manager/cert-manager/test/framework/helper/validation"
+	"github.com/cert-manager/cert-manager/test/framework/helper/validation/certificates"
 )
 
 // Define defines simple conformance tests that can be run against any issuer type.
@@ -266,7 +266,7 @@ func (s *Suite) Define() {
 					return err
 				}
 
-				rdnSeq, err2 := pki.ParseSubjectStringToRdnSequence(literalSubject)
+				rdnSeq, err2 := pki.UnmarshalSubjectStringToRDNSequence(literalSubject)
 
 				if err2 != nil {
 					return err2

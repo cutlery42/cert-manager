@@ -19,7 +19,6 @@ package framework
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,12 +38,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	webhooktesting "github.com/cert-manager/cert-manager/cmd/webhook/app/testing"
 	"github.com/cert-manager/cert-manager/internal/test/paths"
 	"github.com/cert-manager/cert-manager/internal/webhook"
 	"github.com/cert-manager/cert-manager/pkg/api"
 	"github.com/cert-manager/cert-manager/pkg/webhook/handlers"
-	"github.com/cert-manager/cert-manager/test/internal/apiserver"
+	"github.com/cert-manager/cert-manager/test/apiserver"
+	webhooktesting "github.com/cert-manager/cert-manager/test/webhook"
 )
 
 type StopFunc func()
@@ -99,7 +98,7 @@ func RunControlPlane(t *testing.T, ctx context.Context, optionFunctions ...RunCo
 		t.Fatal(err)
 	}
 
-	f, err := ioutil.TempFile("", "integration-")
+	f, err := os.CreateTemp("", "integration-")
 	if err != nil {
 		t.Fatal(err)
 	}

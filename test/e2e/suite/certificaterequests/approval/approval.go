@@ -33,13 +33,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 
+	e2eutil "github.com/cert-manager/cert-manager/e2e-tests/util"
 	apiutil "github.com/cert-manager/cert-manager/pkg/api/util"
 	cmapi "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	clientset "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned"
-	"github.com/cert-manager/cert-manager/test/e2e/framework"
-	testutil "github.com/cert-manager/cert-manager/test/e2e/framework/util"
-	e2eutil "github.com/cert-manager/cert-manager/test/e2e/util"
+	"github.com/cert-manager/cert-manager/test/framework"
+	testutil "github.com/cert-manager/cert-manager/test/framework/util"
 	"github.com/cert-manager/cert-manager/test/unit/gen"
 )
 
@@ -174,23 +174,21 @@ var _ = framework.CertManagerDescribe("Approval CertificateRequests", func() {
 			token []byte
 			ok    bool
 		)
-		err = wait.PollImmediate(time.Second, time.Second*10,
-			func() (bool, error) {
-				secret, err = f.KubeClientSet.CoreV1().Secrets(f.Namespace.Name).Get(context.TODO(), secret.Name, metav1.GetOptions{})
-				if err != nil {
-					return false, err
-				}
+		err = wait.PollUntilContextTimeout(context.TODO(), time.Second, time.Second*10, true, func(ctx context.Context) (bool, error) {
+			secret, err = f.KubeClientSet.CoreV1().Secrets(f.Namespace.Name).Get(ctx, secret.Name, metav1.GetOptions{})
+			if err != nil {
+				return false, err
+			}
 
-				if len(secret.Data) == 0 {
-					return false, nil
-				}
-				if token, ok = secret.Data["token"]; !ok {
-					return false, nil
-				}
+			if len(secret.Data) == 0 {
+				return false, nil
+			}
+			if token, ok = secret.Data["token"]; !ok {
+				return false, nil
+			}
 
-				return true, nil
-			},
-		)
+			return true, nil
+		})
 		Expect(err).NotTo(HaveOccurred(), fmt.Sprintf("Error: %s", err))
 
 		By("Building ServiceAccount kubernetes clientset")
@@ -198,6 +196,8 @@ var _ = framework.CertManagerDescribe("Approval CertificateRequests", func() {
 		kubeConfig, err := testutil.LoadConfig(f.Config.KubeConfig, f.Config.KubeContext)
 		Expect(err).NotTo(HaveOccurred())
 
+		kubeConfig.QPS = 9000
+		kubeConfig.Burst = 9000
 		kubeConfig.BearerToken = fmt.Sprintf("%s", token)
 		kubeConfig.CertData = nil
 		kubeConfig.KeyData = nil

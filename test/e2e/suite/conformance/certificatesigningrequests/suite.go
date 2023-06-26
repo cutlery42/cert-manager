@@ -24,8 +24,8 @@ import (
 
 	"github.com/cert-manager/cert-manager/internal/controller/feature"
 	utilfeature "github.com/cert-manager/cert-manager/pkg/util/feature"
-	"github.com/cert-manager/cert-manager/test/e2e/framework"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/helper/featureset"
+	"github.com/cert-manager/cert-manager/test/framework"
+	"github.com/cert-manager/cert-manager/test/framework/helper/featureset"
 )
 
 // Suite defines a reusable conformance test suite that can be used against any

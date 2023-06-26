@@ -25,8 +25,9 @@ import (
 
 	"github.com/spf13/pflag"
 	"k8s.io/apimachinery/pkg/util/sets"
+	"k8s.io/component-base/logs"
 
-	cmdutil "github.com/cert-manager/cert-manager/cmd/util"
+	cmdutil "github.com/cert-manager/cert-manager/internal/cmd/util"
 	"github.com/cert-manager/cert-manager/internal/controller/feature"
 	cm "github.com/cert-manager/cert-manager/pkg/apis/certmanager"
 	challengescontroller "github.com/cert-manager/cert-manager/pkg/controller/acmechallenges"
@@ -59,6 +60,8 @@ import (
 )
 
 type ControllerOptions struct {
+	Logging *logs.Options
+
 	APIServerHost      string
 	Kubeconfig         string
 	KubernetesAPIQPS   float32
@@ -101,11 +104,21 @@ type ControllerOptions struct {
 
 	EnableCertificateOwnerRef bool
 
+	// The number of concurrent workers for each controller.
+	NumberOfConcurrentWorkers int
+	// MaxConcurrentChallenges determines the maximum number of challenges that can be
+	// scheduled as 'processing' at once.
 	MaxConcurrentChallenges int
 
 	// The host and port address, separated by a ':', that the Prometheus server
 	// should expose metrics on.
 	MetricsListenAddress string
+	// The host and port address, separated by a ':', that the healthz server
+	// should listen on.
+	HealthzListenAddress string
+	// Leader election healthz checks within this timeout period after the lease
+	// expires will still return healthy.
+	HealthzLeaderElectionTimeout time.Duration
 	// PprofAddress is the address on which Go profiler will run. Should be
 	// in form <host>:<port>.
 	PprofAddress string
@@ -142,9 +155,15 @@ const (
 
 	defaultDNS01RecursiveNameserversOnly = false
 
-	defaultMaxConcurrentChallenges = 60
+	defaultNumberOfConcurrentWorkers = 5
+	defaultMaxConcurrentChallenges   = 60
 
 	defaultPrometheusMetricsServerAddress = "0.0.0.0:9402"
+	defaultHealthzServerAddress           = "0.0.0.0:9403"
+	// This default value is the same as used in Kubernetes controller-manager.
+	// See:
+	// https://github.com/kubernetes/kubernetes/blob/806b30170c61a38fedd54cc9ede4cd6275a1ad3b/cmd/kube-controller-manager/app/controllermanager.go#L202-L209
+	defaultHealthzLeaderElectionTimeout = 20 * time.Second
 
 	// default time period to wait between checking DNS01 and HTTP01 challenge propagation
 	defaultDNS01CheckRetryPeriod = 10 * time.Second
@@ -246,9 +265,14 @@ func NewControllerOptions() *ControllerOptions {
 		DNS01RecursiveNameserversOnly:     defaultDNS01RecursiveNameserversOnly,
 		EnableCertificateOwnerRef:         defaultEnableCertificateOwnerRef,
 		MetricsListenAddress:              defaultPrometheusMetricsServerAddress,
+		HealthzListenAddress:              defaultHealthzServerAddress,
+		HealthzLeaderElectionTimeout:      defaultHealthzLeaderElectionTimeout,
+		NumberOfConcurrentWorkers:         defaultNumberOfConcurrentWorkers,
+		MaxConcurrentChallenges:           defaultMaxConcurrentChallenges,
 		DNS01CheckRetryPeriod:             defaultDNS01CheckRetryPeriod,
 		EnablePprof:                       cmdutil.DefaultEnableProfiling,
 		PprofAddress:                      cmdutil.DefaultProfilerAddr,
+		Logging:                           logs.NewOptions(),
 	}
 }
 
@@ -358,6 +382,8 @@ func (s *ControllerOptions) AddFlags(fs *pflag.FlagSet) {
 		"A prefix starting with a dash(-) specifies an annotation that shouldn't be copied. Example: '*,-kubectl.kuberenetes.io/'- all annotations"+
 		"will be copied apart from the ones where the key is prefixed with 'kubectl.kubernetes.io/'.")
 
+	fs.IntVar(&s.NumberOfConcurrentWorkers, "concurrent-workers", defaultNumberOfConcurrentWorkers, ""+
+		"The number of concurrent workers for each controller.")
 	fs.IntVar(&s.MaxConcurrentChallenges, "max-concurrent-challenges", defaultMaxConcurrentChallenges, ""+
 		"The maximum number of challenges that can be scheduled as 'processing' at once.")
 	fs.DurationVar(&s.DNS01CheckRetryPeriod, "dns01-check-retry-period", defaultDNS01CheckRetryPeriod, ""+
@@ -370,6 +396,25 @@ func (s *ControllerOptions) AddFlags(fs *pflag.FlagSet) {
 		"Enable profiling for controller.")
 	fs.StringVar(&s.PprofAddress, "profiler-address", cmdutil.DefaultProfilerAddr,
 		"The host and port that Go profiler should listen on, i.e localhost:6060. Ensure that profiler is not exposed on a public address. Profiler will be served at /debug/pprof.")
+
+	// The healthz related flags are given the prefix "internal-" and are hidden,
+	// to discourage users from overriding them.
+	// We may want to rename or remove these flags when we have feedback from
+	// end-users about whether the default liveness
+	// probe and the separate healthz server are a good and correct way to
+	// mitigate unexpected deadlocks in the controller-manager process.
+	//
+	// TODO(wallrj) Consider merging the metrics, pprof and healthz servers, and
+	// having a single --secure-port flag, like Kubernetes components do.
+	fs.StringVar(&s.HealthzListenAddress, "internal-healthz-listen-address", defaultHealthzServerAddress, ""+
+		"The host and port that the healthz server should listen on. "+
+		"The healthz server serves the /livez endpoint, which is called by the LivenessProbe.")
+	fs.MarkHidden("internal-healthz-listen-address")
+	fs.DurationVar(&s.HealthzLeaderElectionTimeout, "internal-healthz-leader-election-timeout", defaultHealthzLeaderElectionTimeout, ""+
+		"Leader election healthz checks within this timeout period after the lease expires will still return healthy")
+	fs.MarkHidden("internal-healthz-leader-election-timeout")
+
+	logf.AddFlags(s.Logging, fs)
 }
 
 func (o *ControllerOptions) Validate() error {
@@ -408,6 +453,11 @@ func (o *ControllerOptions) Validate() error {
 		if !allControllersSet.Has(controller) {
 			errs = append(errs, fmt.Errorf("%q is not in the list of known controllers", controller))
 		}
+	}
+
+	err := logf.ValidateAndApply(o.Logging)
+	if err != nil {
+		errs = append(errs, err)
 	}
 
 	if len(errs) > 0 {

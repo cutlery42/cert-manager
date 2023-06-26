@@ -32,7 +32,7 @@ import (
 	"k8s.io/kubectl/pkg/util/templates"
 
 	"github.com/cert-manager/cert-manager/cmd/ctl/pkg/factory"
-	cmcmdutil "github.com/cert-manager/cert-manager/cmd/util"
+	cmcmdutil "github.com/cert-manager/cert-manager/internal/cmd/util"
 	"github.com/cert-manager/cert-manager/pkg/util/cmapichecker"
 )
 
@@ -102,7 +102,7 @@ func NewCmdCheckApi(ctx context.Context, ioStreams genericclioptions.IOStreams) 
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	cmd.Flags().DurationVar(&o.Wait, "wait", 0, "Wait until the cert-manager API is ready (default 0s)")
+	cmd.Flags().DurationVar(&o.Wait, "wait", 0, "Wait until the cert-manager API is ready (default 0s = poll once)")
 	cmd.Flags().DurationVar(&o.Interval, "interval", 5*time.Second, "Time between checks when waiting, must include unit, e.g. 1m or 10m")
 	cmd.Flags().BoolVarP(&o.Verbose, "verbose", "v", false, "Print detailed error messages")
 
@@ -118,30 +118,32 @@ func (o *Options) Run(ctx context.Context) {
 	}
 	log.SetOutput(o.ErrOut) // Log all intermediate errors to stderr
 
-	pollContext, cancel := context.WithTimeout(ctx, o.Wait)
-	defer cancel()
-
-	pollErr := wait.PollImmediateUntil(o.Interval, func() (done bool, err error) {
+	start := time.Now()
+	pollErr := wait.PollUntilContextCancel(ctx, o.Interval, false, func(ctx context.Context) (bool, error) {
 		if err := o.APIChecker.Check(ctx); err != nil {
 			if !o.Verbose && errors.Unwrap(err) != nil {
 				err = errors.Unwrap(err)
 			}
 
 			log.Printf("Not ready: %v", err)
+
+			if time.Since(start) > o.Wait {
+				return false, context.DeadlineExceeded
+			}
 			return false, nil
 		}
 
 		return true, nil
-	}, pollContext.Done())
+	})
 
 	log.SetOutput(o.Out) // Log conclusion to stdout
 
 	if pollErr != nil {
-		if errors.Is(pollContext.Err(), context.DeadlineExceeded) && o.Wait > 0 {
+		if errors.Is(pollErr, context.DeadlineExceeded) && o.Wait > 0 {
 			log.Printf("Timed out after %s", o.Wait)
 		}
 
-		cmcmdutil.SetExitCode(pollContext.Err())
+		cmcmdutil.SetExitCode(pollErr)
 
 		runtime.Goexit() // Do soft exit (handle all defers, that should set correct exit code)
 	}

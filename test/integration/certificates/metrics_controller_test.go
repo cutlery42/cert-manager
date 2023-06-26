@@ -32,13 +32,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	fakeclock "k8s.io/utils/clock/testing"
 
+	"github.com/cert-manager/cert-manager/integration-tests/framework"
 	cmapi "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	controllerpkg "github.com/cert-manager/cert-manager/pkg/controller"
 	controllermetrics "github.com/cert-manager/cert-manager/pkg/controller/certificates/metrics"
 	logf "github.com/cert-manager/cert-manager/pkg/logs"
 	"github.com/cert-manager/cert-manager/pkg/metrics"
-	"github.com/cert-manager/cert-manager/test/integration/framework"
 	"github.com/cert-manager/cert-manager/test/unit/gen"
 )
 
@@ -95,7 +95,14 @@ func TestMetricsController(t *testing.T) {
 		}
 	}()
 
-	ctrl, queue, mustSync := controllermetrics.NewController(factory, cmFactory, metricsHandler)
+	controllerContext := controllerpkg.Context{
+		KubeSharedInformerFactory: factory,
+		SharedInformerFactory:     cmFactory,
+		ContextOptions: controllerpkg.ContextOptions{
+			Metrics: metricsHandler,
+		},
+	}
+	ctrl, queue, mustSync := controllermetrics.NewController(&controllerContext)
 	c := controllerpkg.NewController(
 		ctx,
 		"metrics_test",
@@ -143,14 +150,14 @@ func TestMetricsController(t *testing.T) {
 	}
 
 	waitForMetrics := func(expectedOutput string) {
-		err := wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+		err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 			if err := testMetrics(expectedOutput); err != nil {
 				lastErr = err
 				return false, nil
 			}
 
 			return true, nil
-		}, ctx.Done())
+		})
 		if err != nil {
 			t.Fatalf("%s: failed to wait for expected metrics to be exposed: %s", err, lastErr)
 		}

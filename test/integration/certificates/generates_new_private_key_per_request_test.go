@@ -28,23 +28,21 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/utils/clock"
 
+	"github.com/cert-manager/cert-manager/integration-tests/framework"
 	"github.com/cert-manager/cert-manager/internal/controller/certificates/policies"
 	apiutil "github.com/cert-manager/cert-manager/pkg/api/util"
 	cmapi "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	controllerpkg "github.com/cert-manager/cert-manager/pkg/controller"
-	"github.com/cert-manager/cert-manager/pkg/controller/certificates"
 	"github.com/cert-manager/cert-manager/pkg/controller/certificates/issuing"
 	"github.com/cert-manager/cert-manager/pkg/controller/certificates/keymanager"
 	"github.com/cert-manager/cert-manager/pkg/controller/certificates/readiness"
 	"github.com/cert-manager/cert-manager/pkg/controller/certificates/requestmanager"
 	"github.com/cert-manager/cert-manager/pkg/controller/certificates/revisionmanager"
 	"github.com/cert-manager/cert-manager/pkg/controller/certificates/trigger"
-	testpkg "github.com/cert-manager/cert-manager/pkg/controller/test"
 	logf "github.com/cert-manager/cert-manager/pkg/logs"
 	"github.com/cert-manager/cert-manager/pkg/metrics"
 	"github.com/cert-manager/cert-manager/pkg/util/pki"
-	"github.com/cert-manager/cert-manager/test/integration/framework"
 )
 
 func TestGeneratesNewPrivateKeyIfMarkedInvalidRequest(t *testing.T) {
@@ -80,7 +78,7 @@ func TestGeneratesNewPrivateKeyIfMarkedInvalidRequest(t *testing.T) {
 	}
 
 	var firstReq *cmapi.CertificateRequest
-	if err := wait.Poll(time.Millisecond*500, time.Second*10, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(ctx, time.Millisecond*500, time.Second*10, true, func(ctx context.Context) (bool, error) {
 		reqs, err := cmCl.CertmanagerV1().CertificateRequests(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
@@ -113,7 +111,7 @@ func TestGeneratesNewPrivateKeyIfMarkedInvalidRequest(t *testing.T) {
 	t.Log("Marked CertificateRequest as InvalidRequest")
 
 	// Wait for Certificate to be marked as Failed
-	if err := wait.Poll(time.Millisecond*500, time.Second*50, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(ctx, time.Millisecond*500, time.Second*50, true, func(ctx context.Context) (bool, error) {
 		crt, err := cmCl.CertmanagerV1().Certificates(crt.Namespace).Get(ctx, crt.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -139,7 +137,7 @@ func TestGeneratesNewPrivateKeyIfMarkedInvalidRequest(t *testing.T) {
 	}
 
 	var secondReq *cmapi.CertificateRequest
-	if err := wait.Poll(time.Millisecond*500, time.Second*10, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(ctx, time.Millisecond*500, time.Second*10, true, func(ctx context.Context) (bool, error) {
 		reqs, err := cmCl.CertmanagerV1().CertificateRequests(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
@@ -214,7 +212,7 @@ func TestGeneratesNewPrivateKeyPerRequest(t *testing.T) {
 	}
 
 	var firstReq *cmapi.CertificateRequest
-	if err := wait.Poll(time.Millisecond*500, time.Second*10, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(ctx, time.Millisecond*500, time.Second*10, true, func(ctx context.Context) (bool, error) {
 		reqs, err := cmCl.CertmanagerV1().CertificateRequests(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
@@ -247,7 +245,7 @@ func TestGeneratesNewPrivateKeyPerRequest(t *testing.T) {
 	t.Log("Marked CertificateRequest as Failed")
 
 	// Wait for Certificate to be marked as Failed
-	if err := wait.Poll(time.Millisecond*500, time.Second*50, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(ctx, time.Millisecond*500, time.Second*50, true, func(ctx context.Context) (bool, error) {
 		crt, err := cmCl.CertmanagerV1().Certificates(crt.Namespace).Get(ctx, crt.Name, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -273,7 +271,7 @@ func TestGeneratesNewPrivateKeyPerRequest(t *testing.T) {
 	}
 
 	var secondReq *cmapi.CertificateRequest
-	if err := wait.Poll(time.Millisecond*500, time.Second*10, func() (done bool, err error) {
+	if err := wait.PollUntilContextTimeout(ctx, time.Millisecond*500, time.Second*10, true, func(ctx context.Context) (bool, error) {
 		reqs, err := cmCl.CertmanagerV1().CertificateRequests(namespace).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
@@ -321,23 +319,36 @@ func runAllControllers(t *testing.T, ctx context.Context, config *rest.Config) f
 	log := logf.Log
 	clock := clock.RealClock{}
 	metrics := metrics.New(log, clock)
+	controllerContext := controllerpkg.Context{
+		Client:                    kubeClient,
+		KubeSharedInformerFactory: factory,
+		CMClient:                  cmCl,
+		SharedInformerFactory:     cmFactory,
+		ContextOptions: controllerpkg.ContextOptions{
+			Metrics: metrics,
+			Clock:   clock,
+		},
+		Recorder:     framework.NewEventRecorder(t),
+		FieldManager: "cert-manager-certificates-issuing-test",
+	}
 
-	revCtrl, revQueue, revMustSync := revisionmanager.NewController(log, cmCl, cmFactory)
+	// TODO: set field mananager before calling each of those- is that what we do in actual code?
+	revCtrl, revQueue, revMustSync := revisionmanager.NewController(log, &controllerContext)
 	revisionManager := controllerpkg.NewController(ctx, "revisionmanager_controller", metrics, revCtrl.ProcessItem, revMustSync, nil, revQueue)
 
-	readyCtrl, readyQueue, readyMustSync := readiness.NewController(log, cmCl, factory, cmFactory, policies.NewReadinessPolicyChain(clock), certificates.RenewalTime, readiness.BuildReadyConditionFromChain, "readiness")
+	readyCtrl, readyQueue, readyMustSync := readiness.NewController(log, &controllerContext, policies.NewReadinessPolicyChain(clock), pki.RenewalTime, readiness.BuildReadyConditionFromChain)
 	readinessManager := controllerpkg.NewController(ctx, "readiness_controller", metrics, readyCtrl.ProcessItem, readyMustSync, nil, readyQueue)
 
-	issueCtrl, issueQueue, issueMustSync := issuing.NewController(log, kubeClient, cmCl, factory, cmFactory, &testpkg.FakeRecorder{}, clock, controllerpkg.CertificateOptions{}, "issuing")
+	issueCtrl, issueQueue, issueMustSync := issuing.NewController(log, &controllerContext)
 	issueManager := controllerpkg.NewController(ctx, "issuing_controller", metrics, issueCtrl.ProcessItem, issueMustSync, nil, issueQueue)
 
-	reqCtrl, reqQueue, reqMustSync := requestmanager.NewController(log, cmCl, factory, cmFactory, &testpkg.FakeRecorder{}, clock, controllerpkg.CertificateOptions{}, "requestmanager")
+	reqCtrl, reqQueue, reqMustSync := requestmanager.NewController(log, &controllerContext)
 	requestManager := controllerpkg.NewController(ctx, "requestmanager_controller", metrics, reqCtrl.ProcessItem, reqMustSync, nil, reqQueue)
 
-	keyCtrl, keyQueue, keyMustSync := keymanager.NewController(log, cmCl, kubeClient, factory, cmFactory, &testpkg.FakeRecorder{}, "keymanager")
+	keyCtrl, keyQueue, keyMustSync := keymanager.NewController(log, &controllerContext)
 	keyManager := controllerpkg.NewController(ctx, "keymanager_controller", metrics, keyCtrl.ProcessItem, keyMustSync, nil, keyQueue)
 
-	triggerCtrl, triggerQueue, triggerMustSync := trigger.NewController(log, cmCl, factory, cmFactory, &testpkg.FakeRecorder{}, clock, policies.NewTriggerPolicyChain(clock).Evaluate, "trigger")
+	triggerCtrl, triggerQueue, triggerMustSync := trigger.NewController(log, &controllerContext, policies.NewTriggerPolicyChain(clock).Evaluate)
 	triggerManager := controllerpkg.NewController(ctx, "trigger_controller", metrics, triggerCtrl.ProcessItem, triggerMustSync, nil, triggerQueue)
 
 	return framework.StartInformersAndControllers(t, factory, cmFactory, revisionManager, requestManager, keyManager, triggerManager, readinessManager, issueManager)

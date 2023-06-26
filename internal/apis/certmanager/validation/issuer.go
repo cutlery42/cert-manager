@@ -24,6 +24,7 @@ import (
 	admissionv1 "k8s.io/api/admission/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	cmacme "github.com/cert-manager/cert-manager/internal/apis/acme"
@@ -195,9 +196,21 @@ func ValidateACMEIssuerChallengeSolverHTTP01Config(http01 *cmacme.ACMEChallengeS
 func ValidateACMEIssuerChallengeSolverHTTP01IngressConfig(ingress *cmacme.ACMEChallengeSolverHTTP01Ingress, fldPath *field.Path) field.ErrorList {
 	el := field.ErrorList{}
 
-	if ingress.Class != nil && len(ingress.Name) > 0 {
-		el = append(el, field.Forbidden(fldPath, "only one of 'name' or 'class' should be specified"))
+	if ingress.Class != nil && ingress.IngressClassName != nil && len(ingress.Name) > 0 {
+		el = append(el, field.Forbidden(fldPath, "only one of 'ingressClassName', 'name' or 'class' should be specified"))
 	}
+
+	// Since "class" used to be a free string, let's have a stricter validation
+	// for "ingressClassName" since it is expected to be a valid resource name.
+	// A notable example is "azure/application-gateway" that is a valid value
+	// for "class" but not for "ingressClassName".
+	if ingress.IngressClassName != nil {
+		errs := validation.IsDNS1123Subdomain(*ingress.IngressClassName)
+		if len(errs) > 0 {
+			el = append(el, field.Invalid(fldPath.Child("ingressClassName"), *ingress.IngressClassName, "must be a valid IngressClass name: "+strings.Join(errs, ", ")))
+		}
+	}
+
 	switch ingress.ServiceType {
 	case "", corev1.ServiceTypeClusterIP, corev1.ServiceTypeNodePort:
 	default:
@@ -262,7 +275,67 @@ func ValidateVaultIssuerConfig(iss *certmanager.VaultIssuer, fldPath *field.Path
 		el = append(el, field.Invalid(fldPath.Child("caBundleSecretRef"), iss.CABundleSecretRef.Name, "specified caBundleSecretRef and caBundle cannot be used together"))
 	}
 
-	// TODO: add validation for Vault authentication types
+	el = append(el, ValidateVaultIssuerAuth(&iss.Auth, fldPath.Child("auth"))...)
+
+	return el
+}
+
+func ValidateVaultIssuerAuth(auth *certmanager.VaultAuth, fldPath *field.Path) field.ErrorList {
+	el := field.ErrorList{}
+
+	unionCount := 0
+	if auth.TokenSecretRef != nil {
+		unionCount++
+	}
+
+	if auth.AppRole != nil {
+		if auth.AppRole.RoleId == "" {
+			el = append(el, field.Required(fldPath.Child("appRole", "roleId"), ""))
+		}
+
+		if auth.AppRole.SecretRef.Name == "" {
+			el = append(el, field.Required(fldPath.Child("appRole", "secretRef", "name"), ""))
+		}
+		unionCount++
+	}
+
+	if auth.Kubernetes != nil {
+		unionCount++
+
+		if auth.Kubernetes.Role == "" {
+			el = append(el, field.Required(fldPath.Child("kubernetes", "role"), ""))
+		}
+
+		kubeCount := 0
+		if len(auth.Kubernetes.SecretRef.Name) > 0 {
+			kubeCount++
+		}
+
+		if auth.Kubernetes.ServiceAccountRef != nil {
+			kubeCount++
+			if len(auth.Kubernetes.ServiceAccountRef.Name) == 0 {
+				el = append(el, field.Required(fldPath.Child("kubernetes", "serviceAccountRef", "name"), ""))
+			}
+		}
+
+		if kubeCount == 0 {
+			el = append(el, field.Required(fldPath.Child("kubernetes"), "please supply one of: secretRef, serviceAccountRef"))
+		}
+		if kubeCount > 1 {
+			el = append(el, field.Forbidden(fldPath.Child("kubernetes"), "please supply one of: secretRef, serviceAccountRef"))
+		}
+	}
+
+	if unionCount == 0 {
+		el = append(el, field.Required(fldPath, "please supply one of: appRole, kubernetes, tokenSecretRef"))
+	}
+
+	// Due to the fact that there has not been any "oneOf" validation on
+	// tokenSecretRef, appRole, and kubernetes, people may already have created
+	// Issuer resources in which they have set two of these fields instead of
+	// one. To avoid breaking these manifests, we don't check that the user has
+	// set a single field among these three. Instead, we documented in the API
+	// that it is the first field that is set gets used.
 
 	return el
 }

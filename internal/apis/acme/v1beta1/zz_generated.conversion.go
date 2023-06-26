@@ -692,6 +692,7 @@ func Convert_acme_ACMEChallengeSolverHTTP01GatewayHTTPRoute_To_v1beta1_ACMEChall
 
 func autoConvert_v1beta1_ACMEChallengeSolverHTTP01Ingress_To_acme_ACMEChallengeSolverHTTP01Ingress(in *ACMEChallengeSolverHTTP01Ingress, out *acme.ACMEChallengeSolverHTTP01Ingress, s conversion.Scope) error {
 	out.ServiceType = v1.ServiceType(in.ServiceType)
+	out.IngressClassName = (*string)(unsafe.Pointer(in.IngressClassName))
 	out.Class = (*string)(unsafe.Pointer(in.Class))
 	out.Name = in.Name
 	out.PodTemplate = (*acme.ACMEChallengeSolverHTTP01IngressPodTemplate)(unsafe.Pointer(in.PodTemplate))
@@ -706,6 +707,7 @@ func Convert_v1beta1_ACMEChallengeSolverHTTP01Ingress_To_acme_ACMEChallengeSolve
 
 func autoConvert_acme_ACMEChallengeSolverHTTP01Ingress_To_v1beta1_ACMEChallengeSolverHTTP01Ingress(in *acme.ACMEChallengeSolverHTTP01Ingress, out *ACMEChallengeSolverHTTP01Ingress, s conversion.Scope) error {
 	out.ServiceType = v1.ServiceType(in.ServiceType)
+	out.IngressClassName = (*string)(unsafe.Pointer(in.IngressClassName))
 	out.Class = (*string)(unsafe.Pointer(in.Class))
 	out.Name = in.Name
 	out.PodTemplate = (*ACMEChallengeSolverHTTP01IngressPodTemplate)(unsafe.Pointer(in.PodTemplate))
@@ -768,6 +770,7 @@ func autoConvert_v1beta1_ACMEChallengeSolverHTTP01IngressPodSpec_To_acme_ACMECha
 	out.Tolerations = *(*[]v1.Toleration)(unsafe.Pointer(&in.Tolerations))
 	out.PriorityClassName = in.PriorityClassName
 	out.ServiceAccountName = in.ServiceAccountName
+	out.ImagePullSecrets = *(*[]v1.LocalObjectReference)(unsafe.Pointer(&in.ImagePullSecrets))
 	return nil
 }
 
@@ -782,6 +785,7 @@ func autoConvert_acme_ACMEChallengeSolverHTTP01IngressPodSpec_To_v1beta1_ACMECha
 	out.Tolerations = *(*[]v1.Toleration)(unsafe.Pointer(&in.Tolerations))
 	out.PriorityClassName = in.PriorityClassName
 	out.ServiceAccountName = in.ServiceAccountName
+	out.ImagePullSecrets = *(*[]v1.LocalObjectReference)(unsafe.Pointer(&in.ImagePullSecrets))
 	return nil
 }
 
@@ -1281,6 +1285,7 @@ func Convert_acme_ACMEIssuerDNS01ProviderWebhook_To_v1beta1_ACMEIssuerDNS01Provi
 func autoConvert_v1beta1_ACMEIssuerStatus_To_acme_ACMEIssuerStatus(in *ACMEIssuerStatus, out *acme.ACMEIssuerStatus, s conversion.Scope) error {
 	out.URI = in.URI
 	out.LastRegisteredEmail = in.LastRegisteredEmail
+	out.LastPrivateKeyHash = in.LastPrivateKeyHash
 	return nil
 }
 
@@ -1292,6 +1297,7 @@ func Convert_v1beta1_ACMEIssuerStatus_To_acme_ACMEIssuerStatus(in *ACMEIssuerSta
 func autoConvert_acme_ACMEIssuerStatus_To_v1beta1_ACMEIssuerStatus(in *acme.ACMEIssuerStatus, out *ACMEIssuerStatus, s conversion.Scope) error {
 	out.URI = in.URI
 	out.LastRegisteredEmail = in.LastRegisteredEmail
+	out.LastPrivateKeyHash = in.LastPrivateKeyHash
 	return nil
 }
 

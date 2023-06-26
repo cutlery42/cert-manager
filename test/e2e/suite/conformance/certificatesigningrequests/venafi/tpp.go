@@ -24,13 +24,13 @@ import (
 	. "github.com/onsi/gomega"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	"github.com/cert-manager/cert-manager/e2e-tests/suite/conformance/certificatesigningrequests"
 	"github.com/cert-manager/cert-manager/pkg/controller/certificatesigningrequests/util"
 	cmutil "github.com/cert-manager/cert-manager/pkg/util"
-	"github.com/cert-manager/cert-manager/test/e2e/framework"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/addon/venafi"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/helper/featureset"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/util/errors"
-	"github.com/cert-manager/cert-manager/test/e2e/suite/conformance/certificatesigningrequests"
+	"github.com/cert-manager/cert-manager/test/framework"
+	"github.com/cert-manager/cert-manager/test/framework/addon/venafi"
+	"github.com/cert-manager/cert-manager/test/framework/helper/featureset"
+	"github.com/cert-manager/cert-manager/test/framework/util/errors"
 )
 
 var _ = framework.ConformanceDescribe("CertificateSigningRequests", func() {
@@ -95,7 +95,7 @@ func (t *tpp) createIssuer(f *framework.Framework) string {
 		Namespace: f.Namespace.Name,
 	}
 
-	err := t.Setup(f.Config)
+	_, err := t.Setup(f.Config)
 	if errors.IsSkip(err) {
 		framework.Skipf("Skipping test as addon could not be setup: %v", err)
 	}
@@ -117,7 +117,7 @@ func (t *tpp) createClusterIssuer(f *framework.Framework) string {
 		Namespace: f.Config.Addons.CertManager.ClusterResourceNamespace,
 	}
 
-	err := t.Setup(f.Config)
+	_, err := t.Setup(f.Config)
 	if errors.IsSkip(err) {
 		framework.Skipf("Skipping test as addon could not be setup: %v", err)
 	}

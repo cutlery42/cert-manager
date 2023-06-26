@@ -253,6 +253,7 @@ func TestAcme_Setup(t *testing.T) {
 				gen.SetIssuerACMEAccountURL(acmev2Prod),
 				gen.SetIssuerACMEEmail(someEmail),
 				gen.SetIssuerACMELastRegisteredEmail(someEmail),
+				gen.SetIssuerACMELastPrivateKeyHash(someString),
 				gen.AddIssuerCondition(
 					*gen.IssuerConditionFrom(readyTrueCondition,
 						gen.SetIssuerConditionStatus(cmmeta.ConditionTrue)))),
@@ -537,6 +538,9 @@ func TestAcme_Setup(t *testing.T) {
 				},
 				AddClientFunc: func(string, cmacme.ACMEIssuer, *rsa.PrivateKey, string) {
 					addClientWasCalled = true
+				},
+				IsKeyCheckSumCachedFunc: func(lastPrivateKeyHash string, privateKey *rsa.PrivateKey) bool {
+					return true
 				},
 			}
 

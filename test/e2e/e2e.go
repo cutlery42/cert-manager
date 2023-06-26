@@ -17,37 +17,75 @@ limitations under the License.
 package e2e
 
 import (
+	"encoding/json"
 	"os"
 	"path"
 
 	"github.com/onsi/ginkgo/v2"
 
-	"github.com/cert-manager/cert-manager/test/e2e/framework"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/addon"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/log"
+	"github.com/cert-manager/cert-manager/test/framework"
+	"github.com/cert-manager/cert-manager/test/framework/addon"
+	"github.com/cert-manager/cert-manager/test/framework/log"
 )
 
 var cfg = framework.DefaultConfig
 
+// isGinkgoProcessNumberOne is true if this is the first ginkgo process to run.
+// Only the first ginkgo process will run the global addon Setup, Provision &
+// Deprovision code.
+// All other ginkgo processes will only run the global addon Setup code using
+// the data transferred from the Setup function on the first ginkgo process.
+var isGinkgoProcessNumberOne = false
+
 var _ = ginkgo.SynchronizedBeforeSuite(func() []byte {
 	addon.InitGlobals(cfg)
 
-	err := addon.ProvisionGlobals(cfg)
+	isGinkgoProcessNumberOne = true
+
+	// We first setup the global addons, but do not provision them yet.
+	// This is because we need to transfer the data from ginkgo process #1
+	// to the other ginkgo processes.
+	toBeTransferred, err := addon.SetupGlobalsPrimary(cfg)
 	if err != nil {
 		framework.Failf("Error provisioning global addons: %v", err)
 	}
 
-	return nil
-}, func([]byte) {
-	addon.InitGlobals(cfg)
-
-	err := addon.SetupGlobals(cfg)
+	encodedData, err := json.Marshal(toBeTransferred)
 	if err != nil {
-		framework.Failf("Error configuring global addons: %v", err)
+		framework.Failf("Error encoding global addon data: %v", err)
+	}
+
+	return encodedData
+}, func(encodedData []byte) {
+	transferredData := []addon.AddonTransferableData{}
+	err := json.Unmarshal(encodedData, &transferredData)
+	if err != nil {
+		framework.Failf("Error decoding global addon data: %v", err)
+	}
+
+	if isGinkgoProcessNumberOne {
+		// For ginkgo process #1, we need to run ProvisionGlobals to
+		// actually provision the global addons.
+		err = addon.ProvisionGlobals(cfg)
+		if err != nil {
+			framework.Failf("Error configuring global addons: %v", err)
+		}
+	} else {
+		// For gingko process #2 and above, we need to run Setup with
+		// the Setup data returned by ginkgo process #1.
+		addon.InitGlobals(cfg)
+
+		err := addon.SetupGlobalsNonPrimary(cfg, transferredData)
+		if err != nil {
+			framework.Failf("Error provisioning global addons: %v", err)
+		}
 	}
 })
 
-var _ = ginkgo.SynchronizedAfterSuite(func() {}, func() {
+var _ = ginkgo.SynchronizedAfterSuite(func() {
+	// Reset the isGinkgoProcessNumberOne flag to false for the next run (when --repeat flag is used)
+	isGinkgoProcessNumberOne = false
+}, func() {
 	ginkgo.By("Retrieving logs for global addons")
 	globalLogs, err := addon.GlobalLogs()
 	if err != nil {

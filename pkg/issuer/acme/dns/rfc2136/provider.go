@@ -27,6 +27,7 @@ import (
 	corelisters "k8s.io/client-go/listers/core/v1"
 	restclient "k8s.io/client-go/rest"
 
+	internalinformers "github.com/cert-manager/cert-manager/internal/informers"
 	whapi "github.com/cert-manager/cert-manager/pkg/acme/webhook/apis/acme/v1alpha1"
 	cmacme "github.com/cert-manager/cert-manager/pkg/apis/acme/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
@@ -36,7 +37,9 @@ import (
 const SolverName = "rfc2136"
 
 type Solver struct {
-	secretLister corelisters.SecretLister
+	secretLister internalinformers.SecretLister
+	// options to apply when the lister gets initialized
+	initOpts []Option
 
 	// If specified, namespace will cause the rfc2136 provider to limit the
 	// scope of the lister/watcher to a single namespace, to allow for
@@ -52,9 +55,24 @@ func WithNamespace(ns string) Option {
 	}
 }
 
-func WithSecretsLister(secretLister corelisters.SecretLister) Option {
+func WithSecretsLister(secretLister internalinformers.SecretLister) Option {
 	return func(s *Solver) {
 		s.secretLister = secretLister
+	}
+}
+
+// InitializeResetLister is a hack to make RFC2136 solver fit the Solver
+// interface. Unlike external solvers that are run as apiserver implementations,
+// this solver is created as part of challenge controller initialization. That
+// makes its Initialize method not fit the Solver interface very well as we want
+// a way to initialize the solver with the existing Secrets lister rather than a
+// new kube apiserver client. InitializeResetLister allows to reset secrets
+// lister when Initialize function is called so that a new lister can be
+// created. This is useful in tests where a kube clientset can get recreated for
+// an existing solver (which would not happen when this solver runs normally).
+func InitializeResetLister() Option {
+	return func(s *Solver) {
+		s.initOpts = []Option{func(s *Solver) { s.secretLister = nil }}
 	}
 }
 
@@ -99,12 +117,12 @@ func (s *Solver) CleanUp(ch *whapi.ChallengeRequest) error {
 }
 
 func (s *Solver) Initialize(kubeClientConfig *restclient.Config, stopCh <-chan struct{}) error {
+	for _, opt := range s.initOpts {
+		opt(s)
+	}
 	// Only start a secrets informerfactory if it is needed (if the solver
 	// is not already initialized with a secrets lister) This is legacy
-	// functionality. If you have a secrets watcher already available in the
-	// caller, you probably want to use that to avoid double caching the
-	// Secrets
-	// TODO: refactor and remove this functionality
+	// functionality and is currently only used in integration tests.
 	if s.secretLister == nil {
 		cl, err := kubernetes.NewForConfig(kubeClientConfig)
 		if err != nil {

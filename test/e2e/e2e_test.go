@@ -27,12 +27,12 @@ import (
 	"github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/util/wait"
 
+	_ "github.com/cert-manager/cert-manager/e2e-tests/suite"
 	"github.com/cert-manager/cert-manager/pkg/logs"
-	_ "github.com/cert-manager/cert-manager/test/e2e/suite"
 )
 
 func init() {
-	logs.InitLogs(flag.CommandLine)
+	logs.InitLogs()
 	cfg.AddFlags(flag.CommandLine)
 
 	wait.ForeverTestTimeout = time.Second * 60

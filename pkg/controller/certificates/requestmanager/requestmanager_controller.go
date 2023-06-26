@@ -31,19 +31,17 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/client-go/informers"
-	corelisters "k8s.io/client-go/listers/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/clock"
 
 	"github.com/cert-manager/cert-manager/internal/controller/feature"
+	internalinformers "github.com/cert-manager/cert-manager/internal/informers"
 	apiutil "github.com/cert-manager/cert-manager/pkg/api/util"
 	cmapi "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
 	cmclient "github.com/cert-manager/cert-manager/pkg/client/clientset/versioned"
-	cminformers "github.com/cert-manager/cert-manager/pkg/client/informers/externalversions"
 	cmlisters "github.com/cert-manager/cert-manager/pkg/client/listers/certmanager/v1"
 	controllerpkg "github.com/cert-manager/cert-manager/pkg/controller"
 	"github.com/cert-manager/cert-manager/pkg/controller/certificates"
@@ -66,7 +64,7 @@ var (
 type controller struct {
 	certificateLister        cmlisters.CertificateLister
 	certificateRequestLister cmlisters.CertificateRequestLister
-	secretLister             corelisters.SecretLister
+	secretLister             internalinformers.SecretLister
 	client                   cmclient.Interface
 	recorder                 record.EventRecorder
 	clock                    clock.Clock
@@ -79,22 +77,14 @@ type controller struct {
 }
 
 func NewController(
-	log logr.Logger,
-	client cmclient.Interface,
-	factory informers.SharedInformerFactory,
-	cmFactory cminformers.SharedInformerFactory,
-	recorder record.EventRecorder,
-	clock clock.Clock,
-	certificateControllerOptions controllerpkg.CertificateOptions,
-	fieldManager string,
-) (*controller, workqueue.RateLimitingInterface, []cache.InformerSynced) {
+	log logr.Logger, ctx *controllerpkg.Context) (*controller, workqueue.RateLimitingInterface, []cache.InformerSynced) {
 	// create a queue used to queue up items to be processed
 	queue := workqueue.NewNamedRateLimitingQueue(workqueue.NewItemExponentialFailureRateLimiter(time.Second*1, time.Second*30), ControllerName)
 
 	// obtain references to all the informers used by this controller
-	certificateInformer := cmFactory.Certmanager().V1().Certificates()
-	certificateRequestInformer := cmFactory.Certmanager().V1().CertificateRequests()
-	secretsInformer := factory.Core().V1().Secrets()
+	certificateInformer := ctx.SharedInformerFactory.Certmanager().V1().Certificates()
+	certificateRequestInformer := ctx.SharedInformerFactory.Certmanager().V1().CertificateRequests()
+	secretsInformer := ctx.KubeSharedInformerFactory.Secrets()
 
 	certificateInformer.Informer().AddEventHandler(&controllerpkg.QueuingEventHandler{Queue: queue})
 	certificateRequestInformer.Informer().AddEventHandler(&controllerpkg.BlockingEventHandler{
@@ -122,11 +112,11 @@ func NewController(
 		certificateLister:        certificateInformer.Lister(),
 		certificateRequestLister: certificateRequestInformer.Lister(),
 		secretLister:             secretsInformer.Lister(),
-		client:                   client,
-		recorder:                 recorder,
-		clock:                    clock,
-		copiedAnnotationPrefixes: certificateControllerOptions.CopiedAnnotationPrefixes,
-		fieldManager:             fieldManager,
+		client:                   ctx.CMClient,
+		recorder:                 ctx.Recorder,
+		clock:                    ctx.Clock,
+		copiedAnnotationPrefixes: ctx.CertificateOptions.CopiedAnnotationPrefixes,
+		fieldManager:             ctx.FieldManager,
 	}, queue, mustSync
 }
 
@@ -321,7 +311,7 @@ func (c *controller) deleteRequestsNotMatchingSpec(ctx context.Context, crt *cma
 	var remaining []*cmapi.CertificateRequest
 	for _, req := range reqs {
 		log := logf.WithRelatedResource(log, req)
-		violations, err := certificates.RequestMatchesSpec(req, crt.Spec)
+		violations, err := pki.RequestMatchesSpec(req, crt.Spec)
 		if err != nil {
 			log.Error(err, "Failed to check if CertificateRequest matches spec, deleting CertificateRequest")
 			if err := c.client.CertmanagerV1().CertificateRequests(req.Namespace).Delete(ctx, req.Name, metav1.DeleteOptions{}); err != nil {
@@ -424,7 +414,7 @@ func (c *controller) createNewCertificateRequest(ctx context.Context, crt *cmapi
 }
 
 func (c *controller) waitForCertificateRequestToExist(namespace, name string) error {
-	return wait.Poll(time.Millisecond*100, time.Second*5, func() (bool, error) {
+	return wait.PollUntilContextTimeout(context.TODO(), time.Millisecond*100, time.Second*5, false, func(ctx context.Context) (bool, error) {
 		_, err := c.certificateRequestLister.CertificateRequests(namespace).Get(name)
 		if apierrors.IsNotFound(err) {
 			return false, nil
@@ -446,15 +436,7 @@ func (c *controllerWrapper) Register(ctx *controllerpkg.Context) (workqueue.Rate
 	// construct a new named logger to be reused throughout the controller
 	log := logf.FromContext(ctx.RootContext, ControllerName)
 
-	ctrl, queue, mustSync := NewController(log,
-		ctx.CMClient,
-		ctx.KubeSharedInformerFactory,
-		ctx.SharedInformerFactory,
-		ctx.Recorder,
-		ctx.Clock,
-		ctx.CertificateOptions,
-		ctx.FieldManager,
-	)
+	ctrl, queue, mustSync := NewController(log, ctx)
 	c.controller = ctrl
 
 	return queue, mustSync, nil

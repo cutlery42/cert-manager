@@ -24,9 +24,10 @@ import (
 
 	cmacme "github.com/cert-manager/cert-manager/pkg/apis/acme/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/addon/base"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/config"
-	"github.com/cert-manager/cert-manager/test/e2e/framework/util/errors"
+	"github.com/cert-manager/cert-manager/test/framework/addon"
+	"github.com/cert-manager/cert-manager/test/framework/addon/base"
+	"github.com/cert-manager/cert-manager/test/framework/config"
+	"github.com/cert-manager/cert-manager/test/framework/util/errors"
 )
 
 // Cloudflare provisions cloudflare credentials in a namespace for cert-manager
@@ -44,24 +45,24 @@ type Cloudflare struct {
 	createdSecret *corev1.Secret
 }
 
-func (b *Cloudflare) Setup(c *config.Config) error {
+func (b *Cloudflare) Setup(c *config.Config, _ ...addon.AddonTransferableData) (addon.AddonTransferableData, error) {
 	if c.Suite.ACME.Cloudflare.APIKey == "" ||
 		c.Suite.ACME.Cloudflare.Domain == "" ||
 		c.Suite.ACME.Cloudflare.Email == "" {
-		return errors.NewSkip(ErrNoCredentials)
+		return nil, errors.NewSkip(ErrNoCredentials)
 	}
 
 	if b.Base == nil {
 		b.Base = &base.Base{}
-		err := b.Base.Setup(c)
+		_, err := b.Base.Setup(c)
 		if err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	b.cf = c.Suite.ACME.Cloudflare
 
-	return nil
+	return nil, nil
 }
 
 // Provision will create a copy of the DNS provider credentials in a secret in

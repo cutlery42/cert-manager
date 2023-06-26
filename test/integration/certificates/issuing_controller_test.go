@@ -36,6 +36,7 @@ import (
 	"k8s.io/utils/clock"
 	"k8s.io/utils/pointer"
 
+	"github.com/cert-manager/cert-manager/integration-tests/framework"
 	"github.com/cert-manager/cert-manager/internal/webhook/feature"
 	apiutil "github.com/cert-manager/cert-manager/pkg/api/util"
 	cmapi "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
@@ -46,7 +47,6 @@ import (
 	"github.com/cert-manager/cert-manager/pkg/metrics"
 	utilfeature "github.com/cert-manager/cert-manager/pkg/util/feature"
 	utilpki "github.com/cert-manager/cert-manager/pkg/util/pki"
-	"github.com/cert-manager/cert-manager/test/integration/framework"
 	testcrypto "github.com/cert-manager/cert-manager/test/unit/crypto"
 	"github.com/cert-manager/cert-manager/test/unit/gen"
 	featuregatetesting "k8s.io/component-base/featuregate/testing"
@@ -69,10 +69,20 @@ func TestIssuingController(t *testing.T) {
 	controllerOptions := controllerpkg.CertificateOptions{
 		EnableOwnerRef: true,
 	}
+	controllerContext := controllerpkg.Context{
+		Client:                    kubeClient,
+		KubeSharedInformerFactory: factory,
+		CMClient:                  cmCl,
+		SharedInformerFactory:     cmFactory,
+		ContextOptions: controllerpkg.ContextOptions{
+			Clock:              clock.RealClock{},
+			CertificateOptions: controllerOptions,
+		},
+		Recorder:     framework.NewEventRecorder(t),
+		FieldManager: "cert-manager-certificates-issuing-test",
+	}
 
-	ctrl, queue, mustSync := issuing.NewController(logf.Log, kubeClient,
-		cmCl, factory, cmFactory, framework.NewEventRecorder(t), clock.RealClock{},
-		controllerOptions, "cert-manage-certificates-issuing-test")
+	ctrl, queue, mustSync := issuing.NewController(logf.Log, &controllerContext)
 	c := controllerpkg.NewController(
 		ctx,
 		"issuing_test",
@@ -207,7 +217,7 @@ func TestIssuingController(t *testing.T) {
 
 	// Wait for the Certificate to have the 'Issuing' condition removed, and
 	// for the signed certificate, ca, and private key stored in the Secret.
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		crt, err = cmCl.CertmanagerV1().Certificates(namespace).Get(ctx, crtName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("Failed to fetch Certificate resource, retrying: %v", err)
@@ -256,7 +266,7 @@ func TestIssuingController(t *testing.T) {
 		}
 
 		return true, nil
-	}, ctx.Done())
+	})
 
 	if err != nil {
 		t.Fatalf("Failed to wait for final state: %+v", crt)
@@ -275,10 +285,20 @@ func TestIssuingController_PKCS8_PrivateKey(t *testing.T) {
 	controllerOptions := controllerpkg.CertificateOptions{
 		EnableOwnerRef: true,
 	}
+	controllerContext := controllerpkg.Context{
+		Client:                    kubeClient,
+		KubeSharedInformerFactory: factory,
+		CMClient:                  cmCl,
+		SharedInformerFactory:     cmFactory,
+		ContextOptions: controllerpkg.ContextOptions{
+			Clock:              clock.RealClock{},
+			CertificateOptions: controllerOptions,
+		},
+		Recorder:     framework.NewEventRecorder(t),
+		FieldManager: "cert-manager-certificates-issuing-test",
+	}
 
-	ctrl, queue, mustSync := issuing.NewController(logf.Log, kubeClient,
-		cmCl, factory, cmFactory, framework.NewEventRecorder(t), clock.RealClock{},
-		controllerOptions, "cert-manage-certificates-issuing-test")
+	ctrl, queue, mustSync := issuing.NewController(logf.Log, &controllerContext)
 	c := controllerpkg.NewController(
 		ctx,
 		"issuing_test",
@@ -420,7 +440,7 @@ func TestIssuingController_PKCS8_PrivateKey(t *testing.T) {
 
 	// Wait for the Certificate to have the 'Issuing' condition removed, and for
 	// the signed certificate, ca, and private key stored in the Secret.
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		crt, err = cmCl.CertmanagerV1().Certificates(namespace).Get(ctx, crtName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("Failed to fetch Certificate resource, retrying: %v", err)
@@ -469,7 +489,7 @@ func TestIssuingController_PKCS8_PrivateKey(t *testing.T) {
 		}
 
 		return true, nil
-	}, ctx.Done())
+	})
 	if err != nil {
 		t.Fatalf("Failed to wait for final state: %+v", crt)
 	}
@@ -490,10 +510,20 @@ func Test_IssuingController_SecretTemplate(t *testing.T) {
 	controllerOptions := controllerpkg.CertificateOptions{
 		EnableOwnerRef: true,
 	}
+	controllerContext := controllerpkg.Context{
+		Client:                    kubeClient,
+		KubeSharedInformerFactory: factory,
+		CMClient:                  cmCl,
+		SharedInformerFactory:     cmFactory,
+		ContextOptions: controllerpkg.ContextOptions{
+			Clock:              clock.RealClock{},
+			CertificateOptions: controllerOptions,
+		},
+		Recorder:     framework.NewEventRecorder(t),
+		FieldManager: "cert-manager-certificates-issuing-test",
+	}
 
-	ctrl, queue, mustSync := issuing.NewController(logf.Log, kubeClient,
-		cmCl, factory, cmFactory, framework.NewEventRecorder(t), clock.RealClock{},
-		controllerOptions, "cert-manage-certificates-issuing-test")
+	ctrl, queue, mustSync := issuing.NewController(logf.Log, &controllerContext)
 	c := controllerpkg.NewController(
 		ctx,
 		"issuing_test",
@@ -628,7 +658,7 @@ func Test_IssuingController_SecretTemplate(t *testing.T) {
 
 	// Wait for the Certificate to have the 'Issuing' condition removed, and for
 	// the signed certificate, ca, and private key stored in the Secret.
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		crt, err = cmCl.CertmanagerV1().Certificates(namespace).Get(ctx, crtName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("Failed to fetch Certificate resource, retrying: %v", err)
@@ -641,7 +671,10 @@ func Test_IssuingController_SecretTemplate(t *testing.T) {
 		}
 
 		return true, nil
-	}, ctx.Done())
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Add labels and annotations to the SecretTemplate.
 	annotations := map[string]string{"annotation-1": "abc", "annotation-2": "123"}
@@ -653,7 +686,7 @@ func Test_IssuingController_SecretTemplate(t *testing.T) {
 	}
 
 	// Wait for the Annotations and Labels to be observed on the Secret.
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		secret, err := kubeClient.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("Failed to fetch Secret resource, retrying: %s", err)
@@ -670,7 +703,7 @@ func Test_IssuingController_SecretTemplate(t *testing.T) {
 			}
 		}
 		return true, nil
-	}, ctx.Done())
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -683,7 +716,7 @@ func Test_IssuingController_SecretTemplate(t *testing.T) {
 	}
 
 	// Wait for the Annotations and Labels to be removed from the Secret.
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		secret, err := kubeClient.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("Failed to fetch Secret resource, retrying: %s", err)
@@ -702,7 +735,7 @@ func Test_IssuingController_SecretTemplate(t *testing.T) {
 			}
 		}
 		return true, nil
-	}, ctx.Done())
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -726,7 +759,20 @@ func Test_IssuingController_AdditionalOutputFormats(t *testing.T) {
 		EnableOwnerRef: true,
 	}
 
-	ctrl, queue, mustSync := issuing.NewController(logf.Log, kubeClient, cmCl, factory, cmFactory, framework.NewEventRecorder(t), clock.RealClock{}, controllerOptions, "cert-manager-issuing-test")
+	controllerContext := controllerpkg.Context{
+		Client:                    kubeClient,
+		KubeSharedInformerFactory: factory,
+		CMClient:                  cmCl,
+		SharedInformerFactory:     cmFactory,
+		ContextOptions: controllerpkg.ContextOptions{
+			Clock:              clock.RealClock{},
+			CertificateOptions: controllerOptions,
+		},
+		Recorder:     framework.NewEventRecorder(t),
+		FieldManager: "cert-manager-certificates-issuing-test",
+	}
+
+	ctrl, queue, mustSync := issuing.NewController(logf.Log, &controllerContext)
 	c := controllerpkg.NewController(
 		ctx,
 		"issuing_test",
@@ -861,7 +907,7 @@ func Test_IssuingController_AdditionalOutputFormats(t *testing.T) {
 
 	// Wait for the Certificate to have the 'Issuing' condition removed, and for
 	// the signed certificate, ca, and private key stored in the Secret.
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		crt, err = cmCl.CertmanagerV1().Certificates(namespace).Get(ctx, crtName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("Failed to fetch Certificate resource, retrying: %v", err)
@@ -874,7 +920,10 @@ func Test_IssuingController_AdditionalOutputFormats(t *testing.T) {
 		}
 
 		return true, nil
-	}, ctx.Done())
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	// Add additional output formats
 	crt = gen.CertificateFrom(crt, gen.SetCertificateAdditionalOutputFormats(
@@ -891,7 +940,7 @@ func Test_IssuingController_AdditionalOutputFormats(t *testing.T) {
 	combinedPEM := append(append(pkBytes, '\n'), certPEM...)
 
 	// Wait for the additional output format values to to be observed on the Secret.
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		secret, err := kubeClient.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("Failed to fetch Secret resource, retrying: %s", err)
@@ -901,7 +950,7 @@ func Test_IssuingController_AdditionalOutputFormats(t *testing.T) {
 			"ca.crt": certPEM, "tls.crt": certPEM, "tls.key": pkBytes,
 			"key.der": pkDER, "tls-combined.pem": combinedPEM,
 		}, secret.Data), nil
-	}, ctx.Done())
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -914,7 +963,7 @@ func Test_IssuingController_AdditionalOutputFormats(t *testing.T) {
 	}
 
 	// Wait for the additional output formats to be removed from the Secret.
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		secret, err := kubeClient.CoreV1().Secrets(namespace).Get(ctx, secretName, metav1.GetOptions{})
 		if err != nil {
 			t.Logf("Failed to fetch Secret resource, retrying: %s", err)
@@ -923,7 +972,7 @@ func Test_IssuingController_AdditionalOutputFormats(t *testing.T) {
 		return reflect.DeepEqual(map[string][]byte{
 			"ca.crt": certPEM, "tls.crt": certPEM, "tls.key": pkBytes,
 		}, secret.Data), nil
-	}, ctx.Done())
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -949,10 +998,19 @@ func Test_IssuingController_OwnerRefernece(t *testing.T) {
 	controllerOptions := controllerpkg.CertificateOptions{
 		EnableOwnerRef: false,
 	}
-	ctrl, queue, mustSync := issuing.NewController(logf.Log, kubeClient, cmClient,
-		factory, cmFactory, framework.NewEventRecorder(t), clock.RealClock{},
-		controllerOptions, fieldManager,
-	)
+	controllerContext := controllerpkg.Context{
+		Client:                    kubeClient,
+		KubeSharedInformerFactory: factory,
+		CMClient:                  cmClient,
+		SharedInformerFactory:     cmFactory,
+		ContextOptions: controllerpkg.ContextOptions{
+			Clock:              clock.RealClock{},
+			CertificateOptions: controllerOptions,
+		},
+		Recorder:     framework.NewEventRecorder(t),
+		FieldManager: fieldManager,
+	}
+	ctrl, queue, mustSync := issuing.NewController(logf.Log, &controllerContext)
 	c := controllerpkg.NewController(ctx, fieldManager, metrics.New(logf.Log, clock.RealClock{}), ctrl.ProcessItem, mustSync, nil, queue)
 	stopControllerNoOwnerRef := framework.StartInformersAndController(t, factory, cmFactory, c)
 	defer func() {
@@ -1036,10 +1094,19 @@ func Test_IssuingController_OwnerRefernece(t *testing.T) {
 	kubeClient, factory, cmClient, cmFactory = framework.NewClients(t, config)
 	stopControllerNoOwnerRef = nil
 	controllerOptions.EnableOwnerRef = true
-	ctrl, queue, mustSync = issuing.NewController(logf.Log, kubeClient, cmClient,
-		factory, cmFactory, framework.NewEventRecorder(t), clock.RealClock{},
-		controllerOptions, fieldManager,
-	)
+	controllerContext = controllerpkg.Context{
+		Client:                    kubeClient,
+		KubeSharedInformerFactory: factory,
+		CMClient:                  cmClient,
+		SharedInformerFactory:     cmFactory,
+		ContextOptions: controllerpkg.ContextOptions{
+			Clock:              clock.RealClock{},
+			CertificateOptions: controllerOptions,
+		},
+		Recorder:     framework.NewEventRecorder(t),
+		FieldManager: fieldManager,
+	}
+	ctrl, queue, mustSync = issuing.NewController(logf.Log, &controllerContext)
 	c = controllerpkg.NewController(ctx, fieldManager, metrics.New(logf.Log, clock.RealClock{}), ctrl.ProcessItem, mustSync, nil, queue)
 	stopControllerOwnerRef := framework.StartInformersAndController(t, factory, cmFactory, c)
 	defer stopControllerOwnerRef()

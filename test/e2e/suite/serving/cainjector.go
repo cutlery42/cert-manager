@@ -33,11 +33,11 @@ import (
 	apireg "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/cert-manager/cert-manager/e2e-tests/util"
 	certmanager "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	v1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	"github.com/cert-manager/cert-manager/test/e2e/framework"
-	"github.com/cert-manager/cert-manager/test/e2e/util"
+	"github.com/cert-manager/cert-manager/test/framework"
 	"github.com/cert-manager/cert-manager/test/unit/gen"
 )
 
@@ -49,7 +49,7 @@ type injectableTest struct {
 }
 
 var _ = framework.CertManagerDescribe("CA Injector", func() {
-	f := framework.NewDefaultFramework("ca-injector")
+	f := framework.NewDefaultFramework("cainjector")
 
 	issuerName := "inject-cert-issuer"
 	secretName := "serving-certs-data"

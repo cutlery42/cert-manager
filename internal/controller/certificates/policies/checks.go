@@ -33,9 +33,9 @@ import (
 	"sigs.k8s.io/structured-merge-diff/v4/fieldpath"
 	"sigs.k8s.io/structured-merge-diff/v4/value"
 
+	cmmeta "github.com/cert-manager/cert-manager/internal/apis/meta"
 	internalcertificates "github.com/cert-manager/cert-manager/internal/controller/certificates"
 	cmapi "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
-	"github.com/cert-manager/cert-manager/pkg/controller/certificates"
 	"github.com/cert-manager/cert-manager/pkg/util/pki"
 )
 
@@ -84,7 +84,7 @@ func SecretPrivateKeyMatchesSpec(input Input) (string, string, bool) {
 		return SecretMismatch, fmt.Sprintf("Existing issued Secret contains invalid private key data: %v", err), true
 	}
 
-	violations, err := certificates.PrivateKeyMatchesSpec(pk, input.Certificate.Spec)
+	violations, err := pki.PrivateKeyMatchesSpec(pk, input.Certificate.Spec)
 	if err != nil {
 		return SecretMismatch, fmt.Sprintf("Failed to check private key is up to date: %v", err), true
 	}
@@ -101,6 +101,8 @@ func SecretPrivateKeyMatchesSpec(input Input) (string, string, bool) {
 // If the private key rotation is set to "Never", the key store related values are re-encoded
 // as per the certificate specification
 func SecretKeystoreFormatMatchesSpec(input Input) (string, string, bool) {
+	_, issuerProvidesCA := input.Secret.Data[cmmeta.TLSCAKey]
+
 	if input.Certificate.Spec.Keystores == nil {
 		if len(input.Secret.Data[cmapi.PKCS12SecretKey]) != 0 ||
 			len(input.Secret.Data[cmapi.PKCS12TruststoreKey]) != 0 ||
@@ -114,8 +116,8 @@ func SecretKeystoreFormatMatchesSpec(input Input) (string, string, bool) {
 	if input.Certificate.Spec.Keystores.JKS != nil {
 		if input.Certificate.Spec.Keystores.JKS.Create {
 			if len(input.Secret.Data[cmapi.JKSSecretKey]) == 0 ||
-				len(input.Secret.Data[cmapi.JKSTruststoreKey]) == 0 {
-				return SecretMismatch, "JKS Keystore keys does not contain data", true
+				(len(input.Secret.Data[cmapi.JKSTruststoreKey]) == 0 && issuerProvidesCA) {
+				return SecretMismatch, "JKS Keystore key does not contain data", true
 			}
 		} else {
 			if len(input.Secret.Data[cmapi.JKSSecretKey]) != 0 ||
@@ -133,8 +135,8 @@ func SecretKeystoreFormatMatchesSpec(input Input) (string, string, bool) {
 	if input.Certificate.Spec.Keystores.PKCS12 != nil {
 		if input.Certificate.Spec.Keystores.PKCS12.Create {
 			if len(input.Secret.Data[cmapi.PKCS12SecretKey]) == 0 ||
-				len(input.Secret.Data[cmapi.PKCS12TruststoreKey]) == 0 {
-				return SecretMismatch, "PKCS12 Keystore keys does not contain data", true
+				(len(input.Secret.Data[cmapi.PKCS12TruststoreKey]) == 0 && issuerProvidesCA) {
+				return SecretMismatch, "PKCS12 Keystore key does not contain data", true
 			}
 		} else {
 			if len(input.Secret.Data[cmapi.PKCS12SecretKey]) != 0 ||
@@ -175,7 +177,7 @@ func CurrentCertificateRequestNotValidForSpec(input Input) (string, string, bool
 		return currentSecretValidForSpec(input)
 	}
 
-	violations, err := certificates.RequestMatchesSpec(input.CurrentRevisionRequest, input.Certificate.Spec)
+	violations, err := pki.RequestMatchesSpec(input.CurrentRevisionRequest, input.Certificate.Spec)
 	if err != nil {
 		// If parsing the request fails, we don't immediately trigger a re-issuance as
 		// the existing certificate stored in the Secret may still be valid/up to date.
@@ -192,7 +194,7 @@ func CurrentCertificateRequestNotValidForSpec(input Input) (string, string, bool
 // and is instead called by currentCertificateRequestValidForSpec if no there
 // is no existing CertificateRequest resource.
 func currentSecretValidForSpec(input Input) (string, string, bool) {
-	violations, err := certificates.SecretDataAltNamesMatchSpec(input.Secret, input.Certificate.Spec)
+	violations, err := pki.SecretDataAltNamesMatchSpec(input.Secret, input.Certificate.Spec)
 	if err != nil {
 		// This case should never be reached as we already check the certificate data can
 		// be parsed in an earlier policy check, but handle it anyway.
@@ -228,7 +230,7 @@ func CurrentCertificateNearingExpiry(c clock.Clock) Func {
 		notBefore := metav1.NewTime(x509cert.NotBefore)
 		notAfter := metav1.NewTime(x509cert.NotAfter)
 		crt := input.Certificate
-		renewalTime := certificates.RenewalTime(notBefore.Time, notAfter.Time, crt.Spec.RenewBefore)
+		renewalTime := pki.RenewalTime(notBefore.Time, notAfter.Time, crt.Spec.RenewBefore)
 
 		renewIn := renewalTime.Time.Sub(c.Now())
 		if renewIn > 0 {
@@ -345,7 +347,10 @@ func SecretTemplateMismatchesSecretManagedFields(fieldManager string) Func {
 			}
 		}
 
-		baseAnnotations := internalcertificates.AnnotationsForCertificateSecret(input.Certificate, x509cert)
+		baseAnnotations, err := internalcertificates.AnnotationsForCertificateSecret(input.Certificate, x509cert)
+		if err != nil {
+			return InvalidCertificate, fmt.Sprintf("Failed getting secret annotations: %v", err), true
+		}
 
 		managedLabels, managedAnnotations := sets.NewString(), sets.NewString()
 

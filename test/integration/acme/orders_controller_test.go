@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/utils/clock"
 
+	"github.com/cert-manager/cert-manager/integration-tests/framework"
 	accountstest "github.com/cert-manager/cert-manager/pkg/acme/accounts/test"
 	acmecl "github.com/cert-manager/cert-manager/pkg/acme/client"
 	cmacme "github.com/cert-manager/cert-manager/pkg/apis/acme/v1"
@@ -36,7 +37,6 @@ import (
 	"github.com/cert-manager/cert-manager/pkg/controller/acmeorders"
 	logf "github.com/cert-manager/cert-manager/pkg/logs"
 	"github.com/cert-manager/cert-manager/pkg/metrics"
-	"github.com/cert-manager/cert-manager/test/integration/framework"
 	"github.com/cert-manager/cert-manager/test/unit/gen"
 )
 
@@ -118,17 +118,27 @@ func TestAcmeOrdersController(t *testing.T) {
 		},
 	}
 
+	controllerContext := controllerpkg.Context{
+		Client:                    kubeClient,
+		KubeSharedInformerFactory: factory,
+		CMClient:                  cmCl,
+		SharedInformerFactory:     cmFactory,
+		ContextOptions: controllerpkg.ContextOptions{
+			Clock: clock.RealClock{},
+			ACMEOptions: controllerpkg.ACMEOptions{
+				AccountRegistry: accountRegistry,
+			},
+		},
+
+		Recorder:     framework.NewEventRecorder(t),
+		FieldManager: "cert-manager-orders-test",
+	}
+
 	// Create a new orders controller.
 	ctrl, queue, mustSync := acmeorders.NewController(
 		logf.Log,
-		cmCl,
-		factory,
-		cmFactory,
-		accountRegistry,
-		framework.NewEventRecorder(t),
-		clock.RealClock{},
+		&controllerContext,
 		false,
-		"cert-manager-test",
 	)
 	c := controllerpkg.NewController(
 		ctx,
@@ -200,7 +210,7 @@ func TestAcmeOrdersController(t *testing.T) {
 
 	// Wait for the Challenge to be created.
 	var chal *cmacme.Challenge
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (done bool, err error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		chals, err := cmCl.AcmeV1().Challenges(testName).List(ctx, metav1.ListOptions{})
 		if err != nil {
 			return false, err
@@ -220,7 +230,7 @@ func TestAcmeOrdersController(t *testing.T) {
 			return false, fmt.Errorf("found an unexpected Challenge resource: %v", chal.Name)
 		}
 		return true, nil
-	}, ctx.Done())
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -249,9 +259,7 @@ func TestAcmeOrdersController(t *testing.T) {
 	// Reason field on Order's status. Change this test once we are setting
 	// Reasons on intermittent Order states.
 	var pendingOrder *cmacme.Order
-	timeoutCtx, timeoutCancel := context.WithTimeout(ctx, acmeorders.RequeuePeriod)
-	defer timeoutCancel()
-	err = wait.PollImmediateUntil(time.Millisecond*200, func() (bool, error) {
+	err = wait.PollUntilContextTimeout(ctx, time.Millisecond*200, acmeorders.RequeuePeriod, true, func(ctx context.Context) (bool, error) {
 		pendingOrder, err = cmCl.AcmeV1().Orders(testName).Get(ctx, testName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -260,16 +268,12 @@ func TestAcmeOrdersController(t *testing.T) {
 			return true, nil
 		}
 		return false, nil
-	}, timeoutCtx.Done())
+	})
 	switch {
 	case err == nil:
 		t.Fatalf("Expected Order to have pending status instead got: %v", pendingOrder.Status.State)
-	case err == wait.ErrWaitTimeout:
-		if ctx.Err() != nil {
-			t.Error(ctx.Err())
-		}
-
-		// 'happy case' - Order remained pending
+	case err == context.DeadlineExceeded:
+		// this is the expected 'happy case'
 	default:
 		t.Fatal(err)
 	}
@@ -278,7 +282,7 @@ func TestAcmeOrdersController(t *testing.T) {
 	acmeOrder.Status = acmeapi.StatusReady
 
 	// Wait for the status of the Order to become Valid.
-	err = wait.PollImmediateUntil(time.Millisecond*100, func() (bool, error) {
+	err = wait.PollUntilContextCancel(ctx, time.Millisecond*100, true, func(ctx context.Context) (done bool, err error) {
 		o, err := cmCl.AcmeV1().Orders(testName).Get(ctx, testName, metav1.GetOptions{})
 		if err != nil {
 			return false, err
@@ -288,7 +292,7 @@ func TestAcmeOrdersController(t *testing.T) {
 			return false, nil
 		}
 		return true, nil
-	}, ctx.Done())
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
